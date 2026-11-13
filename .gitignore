@@ -1,0 +1,35 @@
+# This repo is PUBLIC. Everything listed here stays on my machine only.
+
+# 1. Secrets: every .env file, except the example with fake values
+.env
+.env.*
+!.env.example
+
+# 2. Real data: anything real (exports, imports, backups) goes in /private
+/private/
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.bak
+*.csv
+*.xlsx
+
+# 3. Reference material from planning, never part of this project
+/home-base/
+/repos/
+
+# 4. Generated files: rebuilt by npm, no reason to store them
+node_modules/
+.next/
+out/
+coverage/
+next-env.d.ts
+*.tsbuildinfo
+npm-debug.log*
+
+# 5. Machine and editor files
+.DS_Store
+.claude/
+.vscode/
+.idea/
