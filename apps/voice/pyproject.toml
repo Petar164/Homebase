@@ -1,0 +1,29 @@
+[project]
+name = "helios-voice"
+version = "0.1.0"
+description = "The HELIOS voice worker: microphone, speech recognition and speech output for Home Base."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "numpy>=2.0",
+  "sherpa-onnx>=2.0.1",
+  "kokoro-onnx>=0.6.1",
+  "sounddevice>=0.5.6",
+]
+
+[project.optional-dependencies]
+# The wake word is optional: push-to-talk works without it.
+wake = ["openwakeword>=0.6.0"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+package = false
+# Home Base runs on Windows and is developed on macOS. Resolving for those
+# two only matters: openWakeWord 0.6.0 asks for a Linux-only package
+# (tflite-runtime) that has no build for Python 3.12, which would otherwise
+# make the whole install unsolvable.
+environments = ["sys_platform == 'darwin'", "sys_platform == 'win32'"]

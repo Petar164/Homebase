@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Helios } from "../src/ai/helios.ts";
-import { chooseProvider, costMicros } from "../src/ai/policy.ts";
+import { budgetStatus, chooseProvider, classifyRequest, costMicros, estimateMicros, reserve, type RouteInput, settle, settleAbandoned, warningDue } from "../src/ai/policy.ts";
 import { StandInProvider } from "../src/ai/standin.ts";
 import { toolSpecs } from "../src/ai/tools.ts";
-import type { ChatRequest, ChatResponse, ModelProvider } from "../src/ai/types.ts";
+import type { ChatRequest, ChatResponse, ModelProvider, ProviderRole } from "../src/ai/types.ts";
 import { defaultConfig } from "../src/config.ts";
 import { EventBus } from "../src/events.ts";
 import { type Instance, openInstance } from "../src/instance.ts";
@@ -14,14 +14,18 @@ import { insertTask, taskTitles, tempDir, track } from "./helpers.ts";
 /** A model that answers exactly what the test scripted, and records what it was sent. */
 class ScriptedProvider implements ModelProvider {
   readonly id: string;
+  readonly role: ProviderRole;
   readonly location: "local" | "cloud";
   readonly model: string;
   readonly requests: ChatRequest[] = [];
   private script: Partial<ChatResponse>[];
   isAvailable = true;
+  /** When set, the next call fails with this error. */
+  failWith: Error | null = null;
 
-  constructor(id: string, location: "local" | "cloud", script: Partial<ChatResponse>[] = []) {
+  constructor(id: string, location: "local" | "cloud", script: Partial<ChatResponse>[] = [], role?: ProviderRole) {
     this.id = id;
+    this.role = role ?? (location === "local" ? "local" : "strong");
     this.location = location;
     this.model = `${id}-model`;
     this.script = script;
@@ -30,6 +34,7 @@ class ScriptedProvider implements ModelProvider {
     return this.isAvailable;
   }
   async chat(request: ChatRequest): Promise<ChatResponse> {
+    if (this.failWith) throw this.failWith;
     this.requests.push(structuredClone({ ...request, onText: undefined }));
     const next = this.script.shift() ?? { text: "ok" };
     return { text: "", toolCalls: [], stop: next.toolCalls?.length ? "tool_use" : "end", usage: { inputTokens: 1000, outputTokens: 500 }, model: this.model, ...next };
@@ -167,41 +172,82 @@ describe("what a model may do", () => {
   });
 });
 
-describe("local or cloud", () => {
+describe("which model answers", () => {
   const config = defaultConfig();
   const local = new ScriptedProvider("local", "local");
-  const cloud = new ScriptedProvider("cloud", "cloud");
-  const route = (overrides: Partial<Parameters<typeof chooseProvider>[0]> = {}) =>
-    chooseProvider({ providers: [new StandInProvider(), cloud, local], prefer: "auto", sensitivity: "private", egressApproved: false, capReached: false, ...overrides });
+  const strong = new ScriptedProvider("strong", "cloud", [], "strong");
+  const light = new ScriptedProvider("light", "cloud", [], "light");
+  const all = [new StandInProvider(), strong, light, local];
+  const ordinary = classifyRequest("What is due this week?", config);
+  const analytical = classifyRequest("Compare the two suppliers and analyse the trade-offs", config);
+  const asked = classifyRequest("Think hard about this: which should I pick?", config);
+  const route = (overrides: Partial<RouteInput> = {}) =>
+    chooseProvider({ providers: all, prefer: "auto", cloudEnabled: true, purpose: "conversation", task: ordinary, sensitivity: "private", egressApproved: false, capReached: false, ...overrides });
 
-  it("prefers the local model, and the stand-in only when nothing else exists", async () => {
-    expect(await route()).toMatchObject({ kind: "use", provider: { id: "local" } });
+  it("classifies a request by fixed criteria", () => {
+    expect(ordinary).toEqual({ strongRequested: false, complex: false });
+    expect(analytical).toEqual({ strongRequested: false, complex: true });
+    expect(asked).toEqual({ strongRequested: true, complex: true });
+    expect(classifyRequest("x".repeat(601), config).complex).toBe(true);
+    expect(classifyRequest("short", config, "strong").strongRequested).toBe(true);
+  });
+
+  it("picks the model for each routing condition, and says why", async () => {
+    expect(await route()).toMatchObject({ kind: "use", provider: { id: "local" }, reason: "an ordinary request" });
+    expect(await route({ task: analytical })).toMatchObject({ kind: "use", provider: { id: "strong" }, reason: "a long or analytical request" });
+    expect(await route({ task: asked })).toMatchObject({ kind: "use", provider: { id: "strong" }, reason: "you asked for stronger reasoning" });
+    expect(await route({ purpose: "background" })).toMatchObject({ kind: "use", provider: { id: "light" } });
+    // No local model running: the light cloud model takes ordinary requests.
+    expect(await route({ providers: [strong, light] })).toMatchObject({ kind: "use", provider: { id: "light" }, reason: "the local model is not running" });
+    // Preferences.
+    expect(await route({ prefer: "cloud" })).toMatchObject({ kind: "use", provider: { id: "light" } });
+    expect(await route({ prefer: "local", task: analytical })).toMatchObject({ kind: "use", provider: { id: "local" } });
+    expect(await route({ prefer: "local", task: asked })).toMatchObject({ kind: "use", provider: { id: "strong" } }); // an explicit request still counts
+    // Nothing real set up: the stand-in. A model that already failed is skipped.
     expect(await route({ providers: [new StandInProvider()] })).toMatchObject({ kind: "use", provider: { id: "standin" } });
-    expect(await route({ prefer: "cloud" })).toMatchObject({ kind: "use", provider: { id: "cloud" } });
+    expect(await route({ task: analytical, exclude: new Set(["strong"]) })).toMatchObject({ kind: "use", provider: { id: "local" } });
   });
 
-  it("answers sensitive conversations locally instead of asking, when it can", async () => {
-    expect(await route({ prefer: "cloud", sensitivity: "sensitive" })).toMatchObject({ kind: "use", provider: { id: "local" } });
+  it("never escalates to the cloud when the data policy forbids it", async () => {
+    // Cloud switched off: even an explicit request stays local.
+    expect(await route({ task: asked, cloudEnabled: false })).toMatchObject({ kind: "use", provider: { id: "local" }, reason: expect.stringContaining("switched off") });
+    expect(await route({ providers: [strong, light], cloudEnabled: false })).toMatchObject({ kind: "none" });
+    // Budget used up.
+    expect(await route({ task: analytical, capReached: true })).toMatchObject({ kind: "use", provider: { id: "local" }, reason: expect.stringContaining("budget") });
+    expect(await route({ providers: [strong, light], capReached: true })).toMatchObject({ kind: "none", reason: expect.stringContaining("budget") });
+    // Sensitive content: an analytical request quietly stays local...
+    expect(await route({ task: analytical, sensitivity: "sensitive" })).toMatchObject({ kind: "use", provider: { id: "local" }, reason: expect.stringContaining("sensitive") });
+    // ...an explicit request asks the owner, and only then goes out.
+    expect(await route({ task: asked, sensitivity: "sensitive" })).toMatchObject({ kind: "needs_approval", provider: { id: "strong" } });
+    expect(await route({ task: asked, sensitivity: "sensitive", egressApproved: true })).toMatchObject({ kind: "use", provider: { id: "strong" } });
+    // Secret content never goes to a cloud model, approved or not.
+    expect(await route({ task: asked, sensitivity: "secret", egressApproved: true })).toMatchObject({ kind: "use", provider: { id: "local" } });
+    // Background work never asks: it stays local or does not run.
+    expect(await route({ purpose: "background", sensitivity: "sensitive" })).toMatchObject({ kind: "use", provider: { id: "local" } });
+    expect(await route({ purpose: "background", sensitivity: "sensitive", providers: [light] })).toMatchObject({ kind: "none" });
   });
 
-  it("holds sensitive conversations for approval when only the cloud can answer", async () => {
-    const onlyCloud = { providers: [new StandInProvider(), cloud] };
-    expect(await route({ ...onlyCloud, sensitivity: "sensitive" })).toMatchObject({ kind: "needs_approval" });
-    expect(await route({ ...onlyCloud, sensitivity: "sensitive", egressApproved: true })).toMatchObject({ kind: "use", provider: { id: "cloud" } });
-    expect(await route({ ...onlyCloud, sensitivity: "secret", egressApproved: true })).toMatchObject({ kind: "none" });
-    expect(await route({ ...onlyCloud, capReached: true })).toMatchObject({ kind: "none", reason: expect.stringContaining("budget") });
+  it("prices calls on the safe side, in euros", () => {
+    expect(costMicros(config, "claude-sonnet-5-5", { inputTokens: 1_000_000, outputTokens: 0 })).toBe(2_000_000);
+    expect(costMicros(config, "claude-haiku-5-5", { inputTokens: 200_000, outputTokens: 1000 })).toBe(200_000 * 0.5 + 1000 * 2.5); // the higher rate above 100K tokens
+    expect(costMicros(config, "some-new-model", { inputTokens: 0, outputTokens: 1000 })).toBe(20_000); // unknown is never free
+    // The estimate assumes the whole output allowance is used.
+    expect(estimateMicros(config, "claude-sonnet-5-5", 3000, 8000)).toBe(1000 * 2 + 8000 * 10);
   });
+});
 
-  it("prices a call, and never prices an unknown model as free", () => {
-    expect(costMicros(config, "claude-opus-5-5", { inputTokens: 1_000_000, outputTokens: 0 })).toBe(4_000_000);
-    expect(costMicros(config, "some-new-model", { inputTokens: 0, outputTokens: 1000 })).toBe(20_000);
-  });
+describe("the cloud budget", () => {
+  const cloudOnly = (script: Partial<ChatResponse>[]) => new ScriptedProvider("cloud", "cloud", script, "strong");
+  /** Prices that make the arithmetic obvious: one scripted call costs 0.006 dollars, and at most 0.011 is set aside for it. */
+  function cheapPrices(instance: Instance): void {
+    const { cloud } = instance.config.ai;
+    cloud.pricePerMTok["cloud-model"] = { input: 1, output: 10 };
+    cloud.maxOutputTokens.strong = 1000;
+    cloud.budget.taxAllowance = 0;
+  }
 
   it("does not send money data to the cloud until the owner approves that conversation", async () => {
-    const model = new ScriptedProvider("cloud", "cloud", [
-      { toolCalls: [call("get_money_summary", { month: "2026-11" })] },
-      { text: "You made one sale." },
-    ]);
+    const model = cloudOnly([{ toolCalls: [call("get_money_summary", { month: "2026-11" })] }, { text: "You made one sale." }]);
     const { instance, helios } = await setup([model]);
 
     const turn = await helios.handleMessage("How did the shop do this month?");
@@ -216,19 +262,128 @@ describe("local or cloud", () => {
 
     const { turn: continued } = await helios.decide(turn.approvals[0]?.id as string, "approve", null);
     expect(model.requests).toHaveLength(2);
-    expect(continued?.messages.at(-1)?.text).toBe("You made one sale.");
+    expect(continued?.messages.at(-1)).toMatchObject({ text: "You made one sale.", model: "cloud-model", route: "you asked for stronger reasoning" });
     expect(outcome()).toEqual(["sent", "held_for_approval", "sent"]);
   });
 
-  it("stops using the cloud when the monthly cap is reached", async () => {
-    const model = new ScriptedProvider("cloud", "cloud", [{ text: "one" }, { text: "two" }]);
+  it("stops cloud calls at the monthly cap and says so", async () => {
+    const model = cloudOnly([{ text: "one" }, { text: "two" }]);
     const { instance, helios } = await setup([model]);
-    instance.config.ai.cloud.monthlyCapUsd = 0.01; // one call of 1000 in + 500 out tokens costs more than this
+    cheapPrices(instance);
+    instance.config.ai.cloud.budget.capEur = 0.015; // room for the first call's reservation, not for a second
     await helios.handleMessage("First");
     const second = await helios.handleMessage("Second");
     expect(model.requests).toHaveLength(1);
-    expect(second.messages.at(-1)).toMatchObject({ role: "system", text: expect.stringContaining("budget") });
-    expect((await helios.status()).cloudSpendUsd).toBeGreaterThan(0.01);
+    expect(second.messages.map((m) => m.text).join(" ")).toMatch(/budget of €0.015 is used up/);
+    expect((instance.db.prepare("SELECT outcome FROM egress_log ORDER BY at, rowid").all() as { outcome: string }[]).map((row) => row.outcome)).toEqual(["sent", "blocked_by_cap"]);
+    expect((await helios.status()).budget).toMatchObject({ capEur: 0.015, state: "ok" });
+    expect((await helios.status()).budget.spentEur).toBeCloseTo(0.006, 5);
+  });
+
+  it("answers locally instead when the cap is reached", async () => {
+    const cloud = cloudOnly([{ text: "from the cloud" }]);
+    const local = new ScriptedProvider("local", "local", [{ text: "from this machine" }]);
+    const { instance, helios } = await setup([cloud, local]);
+    instance.config.ai.cloud.budget.capEur = 0;
+    const turn = await helios.handleMessage("Analyse the trade-offs between the two plans");
+    expect(cloud.requests).toHaveLength(0);
+    expect(turn.messages.at(-1)).toMatchObject({ text: "from this machine", model: "local-model", route: expect.stringContaining("budget") });
+  });
+
+  it("keeps its count across a restart", async () => {
+    const dataDir = tempDir();
+    const first = track(await openInstance({ dataDir }));
+    cheapPrices(first);
+    await new Helios({ instance: first, providers: [cloudOnly([{ text: "one" }])], bus: new EventBus(), log: silentLogger }).handleMessage("First");
+    const before = budgetStatus(first.db, first.config).spentEur;
+    expect(before).toBeGreaterThan(0);
+    first.close();
+
+    const second = track(await openInstance({ dataDir }));
+    cheapPrices(second);
+    expect(budgetStatus(second.db, second.config).spentEur).toBeCloseTo(before, 9);
+  });
+
+  it("cannot be passed by two requests at once, or by a crash", async () => {
+    const { instance } = await setup();
+    const { db, config } = instance;
+    config.ai.cloud.budget.capEur = 0.03;
+    config.ai.cloud.budget.taxAllowance = 0;
+    const callInfo = { provider: "cloud", model: "cloud-model", purpose: "conversation", maxSensitivity: "private" as const, bytes: 100, conversationId: null };
+    // Each call may cost up to 0.02; only one fits under 0.03 at a time.
+    const first = reserve(db, config, callInfo, 20_000);
+    expect(first).not.toBeNull();
+    expect(reserve(db, config, callInfo, 20_000)).toBeNull();
+    // The first one turns out cheap, so there is room again.
+    settle(db, first as string, { sent: true, tokensIn: 100, tokensOut: 50, costMicros: 1_000 });
+    const second = reserve(db, config, callInfo, 20_000);
+    expect(second).not.toBeNull();
+
+    // The core dies mid-call. Afterwards the reservation counts as spent, in full.
+    db.prepare("UPDATE cloud_reservations SET at = ?").run(new Date(Date.now() - 60 * 60_000).toISOString());
+    expect(settleAbandoned(db)).toBe(1);
+    expect(db.prepare("SELECT cost_micros, estimated FROM egress_log WHERE estimated = 1").get()).toMatchObject({ cost_micros: 20_000, estimated: 1 });
+    expect(budgetStatus(db, config).spentEur).toBeCloseTo(0.021, 6);
+  });
+
+  it("warns once when spending passes the warning level", async () => {
+    const model = cloudOnly([{ text: "one" }, { text: "two" }, { text: "three" }]);
+    const { instance, helios } = await setup([model]);
+    cheapPrices(instance);
+    instance.config.ai.cloud.budget.warnEur = 0.005;
+    const first = await helios.handleMessage("First");
+    expect(first.messages.at(-1)?.text).toMatch(/reached €0.005 of the €20 limit/);
+    const second = await helios.handleMessage("Second");
+    expect(second.messages.map((m) => m.text).join(" ")).not.toMatch(/reached/);
+    expect(warningDue(instance.db, instance.config)).toBe(false);
+    expect((await helios.status()).budget.state).toBe("warning");
+  });
+});
+
+describe("when a model fails", () => {
+  it("falls back to another model without damaging the conversation", async () => {
+    const local = new ScriptedProvider("local", "local", [{ text: "local again" }]);
+    const light = new ScriptedProvider("light", "cloud", [{ text: "the cloud stepped in" }], "light");
+    const { instance, helios } = await setup([local, light]);
+    local.failWith = new Error("connection refused, prompt was: What is due?");
+
+    const turn = await helios.handleMessage("What is due?");
+    expect(turn.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(turn.messages[1]).toMatchObject({ text: "the cloud stepped in", model: "light-model" });
+
+    // The local model comes back; the same conversation simply continues.
+    local.failWith = null;
+    const next = await helios.handleMessage("And tomorrow?", { conversationId: turn.conversationId });
+    expect(next.messages.at(-1)?.text).toBe("local again");
+    const seqs = (instance.db.prepare("SELECT seq FROM messages WHERE conversation_id = ? ORDER BY seq").all(turn.conversationId) as { seq: number }[]).map((row) => row.seq);
+    expect(seqs).toEqual(seqs.map((_, index) => index + 1)); // no gaps, nothing half-written
+  });
+
+  it("says so plainly when no model can answer, and logs no conversation text", async () => {
+    const local = new ScriptedProvider("local", "local");
+    local.failWith = new Error("timeout while sending: my private question");
+    const logged: string[] = [];
+    const instance = track(await openInstance({ dataDir: tempDir() }));
+    const helios = new Helios({ instance, providers: [new StandInProvider(), local], bus: new EventBus(), log: { info: (m) => logged.push(m), warn: (m) => logged.push(m), error: (m) => logged.push(m) } });
+    const turn = await helios.handleMessage("my private question");
+    expect(turn.messages.at(-1)).toMatchObject({ role: "system", text: "The model did not answer. Try again in a moment." });
+    expect(logged.join("\n")).not.toContain("private question");
+    expect(logged.join("\n")).toContain("Model local failed");
+  });
+});
+
+describe("secrets", () => {
+  it("withholds anything labelled secret from every model, local ones included", async () => {
+    const local = new ScriptedProvider("local", "local", [{ text: "first" }, { text: "second" }]);
+    const { instance, helios } = await setup([local]);
+    const { conversationId } = await helios.handleMessage("The alarm code is 4417");
+    // The owner (or a detector) marks that message secret afterwards.
+    instance.db.exec("DROP TRIGGER messages_no_update");
+    instance.db.prepare("UPDATE messages SET sensitivity = 'secret' WHERE role = 'user'").run();
+    await helios.handleMessage("What did I just tell you?", { conversationId });
+    const sent = JSON.stringify(local.requests[1]?.messages);
+    expect(sent).not.toContain("4417");
+    expect(sent).toContain("[withheld: marked secret]");
   });
 });
 
@@ -248,7 +403,7 @@ describe("memory", () => {
     await helios.handleMessage("What did I decide about the darkroom budget?");
     const results = model.requests.at(-1)?.messages.at(-1);
     expect(JSON.stringify(results)).toContain("900 a month");
-    expect(events).toContain("state:searching");
+    expect(events).toContain("state:retrieving");
     // The hidden date note and tool traffic are not in the index.
     const indexed = instance.db.prepare("SELECT COUNT(*) AS n FROM messages_fts").get() as { n: number };
     const visible = instance.db.prepare("SELECT COUNT(*) AS n FROM messages WHERE role IN ('user', 'assistant') AND text != ''").get() as { n: number };
@@ -270,7 +425,7 @@ describe("memory", () => {
       { toolCalls: [call("get_money_summary", { month: "2026-11" })] },
       { text: "Revenue was zero." },
       { toolCalls: [call("search_conversations", { query: "revenue" })] },
-    ]);
+    ], "strong");
     const { helios } = await setup([cloud]);
     const first = await helios.handleMessage("How much revenue this month?");
     await helios.decide(first.approvals[0]?.id as string, "approve", null); // the first conversation is approved and answered

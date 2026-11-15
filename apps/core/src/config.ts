@@ -33,29 +33,81 @@ const configSchema = z.object({
     .prefault({}),
   ai: z
     .object({
-      /** "auto": a local model when one is running, otherwise the cloud. */
+      /**
+       * "auto": the local model for ordinary requests, a cloud model for
+       * hard ones. "local": never the cloud unless the owner asks for
+       * stronger reasoning. "cloud": cloud models first.
+       */
       prefer: z.enum(["auto", "local", "cloud"]).default("auto"),
       /** When true, small reversible changes (tier 1) run without asking. */
       autoApproveTier1: z.boolean().default(false),
-      cloud: z
-        .object({
-          model: z.string().default("claude-opus-5-5"),
-          /** How hard the cloud model thinks. Lower answers faster and costs less. */
-          effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("medium"),
-          /** Hard stop for cloud spending per calendar month, in US dollars. */
-          monthlyCapUsd: z.number().min(0).default(10),
-          /** Prices in US dollars per million tokens, used to track spending. */
-          pricePerMTok: z
-            .record(z.string(), z.object({ input: z.number().min(0), output: z.number().min(0) }))
-            .default({ "claude-opus-5-5": { input: 4, output: 20 }, "claude-haiku-5-5": { input: 0.1, output: 0.5 } }),
-        })
-        .prefault({}),
       local: z
         .object({
           /** Where Ollama listens. */
           baseUrl: z.string().default("http://127.0.0.1:11434"),
-          /** The local model to use. Empty means: no local model set up. */
-          model: z.string().default(""),
+          /** The local model. Empty means: no local model. */
+          model: z.string().default("qwen3.5:4b"),
+          /** How much conversation the local model is given, in tokens. More uses more GPU memory. */
+          contextTokens: z.number().int().min(1024).max(131072).default(8192),
+          /** How long Ollama keeps the model loaded after an answer. */
+          keepAlive: z.string().default("10m"),
+          /** Lets the model reason before answering. Slower; off for spoken answers. */
+          think: z.boolean().default(false),
+        })
+        .prefault({}),
+      cloud: z
+        .object({
+          /** The data-policy switch. False: nothing is ever sent to a cloud model. */
+          enabled: z.boolean().default(true),
+          /** Hard reasoning, complex planning, analysis. */
+          strongModel: z.string().default("claude-sonnet-5-5"),
+          /** Extraction, classification, summaries, background work. */
+          lightModel: z.string().default("claude-haiku-5-5"),
+          /** How hard each model thinks. Lower answers faster and costs less. */
+          effort: z
+            .object({
+              strong: z.enum(["low", "medium", "high", "xhigh", "max"]).default("medium"),
+              light: z.enum(["low", "medium", "high", "xhigh", "max"]).default("low"),
+            })
+            .prefault({}),
+          /**
+           * The most a single answer may cost in output. It is sent to the
+           * API as the limit, so it is also what the budget sets aside
+           * before each call.
+           */
+          maxOutputTokens: z.object({ strong: z.number().int().min(256).default(8000), light: z.number().int().min(256).default(2000) }).prefault({}),
+          budget: z
+            .object({
+              /** A warning is shown once spending this month reaches this, in euros. */
+              warnEur: z.number().min(0).default(15),
+              /** Cloud calls stop when spending this month would pass this, in euros. */
+              capEur: z.number().min(0).default(20),
+              /**
+               * Prices are in US dollars. One dollar is counted as this many
+               * euros (deliberately not less than the real rate), and
+               * taxAllowance is added on top for VAT and billing differences.
+               */
+              usdToEur: z.number().positive().default(1),
+              taxAllowance: z.number().min(0).default(0.21),
+            })
+            .prefault({}),
+          /** US dollars per million tokens. The "Above100k" prices apply to prompts over 100,000 tokens. */
+          pricePerMTok: z
+            .record(
+              z.string(),
+              z.object({ input: z.number().min(0), output: z.number().min(0), inputAbove100k: z.number().min(0).optional(), outputAbove100k: z.number().min(0).optional() }),
+            )
+            .default({
+              "claude-sonnet-5-5": { input: 2, output: 10 },
+              "claude-haiku-5-5": { input: 0.1, output: 0.5, inputAbove100k: 0.5, outputAbove100k: 2.5 },
+              "claude-opus-5-5": { input: 4, output: 20 },
+            }),
+        })
+        .prefault({}),
+      routing: z
+        .object({
+          /** A request longer than this many characters counts as a hard one. */
+          complexChars: z.number().int().min(50).default(600),
         })
         .prefault({}),
     })

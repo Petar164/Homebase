@@ -49,7 +49,7 @@ export type SnapshotSummary = { id: string; createdAt: string; kind: string; not
 // ---------- HELIOS ----------
 
 /** What HELIOS is doing right now. The screen and the brain follow this. */
-export const HELIOS_STATES = ["idle", "listening", "thinking", "searching", "speaking", "acting", "presenting"] as const;
+export const HELIOS_STATES = ["idle", "listening", "transcribing", "thinking", "retrieving", "speaking", "acting", "presenting", "error"] as const;
 export type HeliosState = (typeof HELIOS_STATES)[number];
 
 export type ConversationSummary = { id: string; title: string; channel: "text" | "voice"; startedAt: string; lastMessageAt: string };
@@ -63,6 +63,8 @@ export type ConversationMessage = {
   createdAt: string;
   /** Which model answered, for assistant messages. */
   model: string | null;
+  /** Why the router chose that model. */
+  route: string | null;
 };
 
 /** A yes HELIOS is waiting for. */
@@ -82,11 +84,12 @@ export type Approval = {
 
 export type HeliosStatus = {
   state: HeliosState;
-  /** The models HELIOS could use, in the order it would try them. */
-  models: { id: string; model: string; location: "local" | "cloud"; available: boolean }[];
-  /** Cloud spending this calendar month, and the cap, in US dollars. */
-  cloudSpendUsd: number;
-  cloudCapUsd: number;
+  /** The models HELIOS could use. `role` is what each one is for. */
+  models: { id: string; role: "local" | "strong" | "light" | "standin"; model: string; location: "local" | "cloud"; available: boolean }[];
+  /** Cloud spending this calendar month, in euros, counted on the safe side. */
+  budget: { spentEur: number; warnEur: number; capEur: number; state: "ok" | "warning" | "capped" };
+  /** False when the owner switched cloud models off. */
+  cloudEnabled: boolean;
 };
 
 export type TurnResult = {

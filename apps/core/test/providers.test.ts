@@ -19,7 +19,7 @@ function fakeClaude(answer: Record<string, unknown>) {
     beta: {
       messages: {
         stream(params) {
-          sent.push(params);
+          sent.push(params as unknown as Record<string, unknown>);
           return {
             on(_event, listener) {
               listener("Hel");
@@ -46,13 +46,15 @@ describe("Claude", () => {
     const current = [thinking, use("t2", "get_overview")];
     const messages: ChatMessage[] = [
       { role: "user", text: "First" },
-      { role: "assistant", text: "Earlier answer", toolCalls: [], provider: "claude", raw: earlier },
+      { role: "assistant", text: "Earlier answer", toolCalls: [], provider: "claude-strong", raw: earlier },
       { role: "user", text: "Second" },
-      { role: "assistant", text: "", toolCalls: [{ id: "t2", name: "get_overview", input: {} }], provider: "claude", raw: current },
+      { role: "assistant", text: "", toolCalls: [{ id: "t2", name: "get_overview", input: {} }], provider: "claude-strong", raw: current },
       { role: "tool", results: [{ id: "t2", name: "get_overview", output: "{}", isError: false }] },
     ];
-    const out = toClaudeMessages(messages);
+    const out = toClaudeMessages(messages, "claude-strong");
     expect(out[1]).toEqual({ role: "assistant", content: [say("Earlier answer")] });
+    // The other Claude model must not be handed this model's reasoning blocks.
+    expect(toClaudeMessages(messages, "claude-light")[3]).toEqual({ role: "assistant", content: [use("t2", "get_overview")] });
     expect(out[3]).toEqual({ role: "assistant", content: current }); // byte for byte, reasoning included
     expect(out[4]).toEqual({ role: "user", content: [{ type: "tool_result", tool_use_id: "t2", content: "{}", is_error: false }] });
   });
@@ -63,7 +65,7 @@ describe("Claude", () => {
       { role: "assistant", text: "", toolCalls: [{ id: "standin-1", name: "list_tasks", input: { show: "open" } }], provider: "standin" },
       { role: "tool", results: [{ id: "standin-1", name: "list_tasks", output: "[]", isError: false }] },
       { role: "assistant", text: "", toolCalls: [], provider: "ollama" },
-    ]);
+    ], "claude-strong");
     expect(out[1]).toEqual({ role: "assistant", content: [use("standin-1", "list_tasks", { show: "open" })] });
     expect(out[3]).toEqual({ role: "assistant", content: [say("(no reply)")] });
   });
@@ -72,16 +74,26 @@ describe("Claude", () => {
     const content = [thinking, say("Hello"), use("t1", "get_overview")];
     const { client, sent } = fakeClaude({ content, stop_reason: "tool_use", usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 90 } });
     const heard: string[] = [];
-    const provider = new ClaudeProvider({ model: "claude-opus-5-5", effort: "low", client });
+    const provider = new ClaudeProvider({ role: "strong", model: "claude-sonnet-5-5", effort: "low", maxOutputTokens: 4000, client });
     const response = await provider.chat({ system: "You are HELIOS.", messages: [{ role: "user", text: "Hi" }], tools: toolSpecs(), onText: (delta) => heard.push(delta) });
 
-    expect(sent[0]).toMatchObject({ model: "claude-opus-5-5", system: "You are HELIOS.", output_config: { effort: "low" }, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"] });
+    expect(sent[0]).toMatchObject({ model: "claude-sonnet-5-5", max_tokens: 4000, system: "You are HELIOS.", output_config: { effort: "low" }, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"] });
     const tools = sent[0]?.tools as { name: string; input_schema: { type: string }; eager_input_streaming: boolean }[];
     expect(tools.find((tool) => tool.name === "add_task")).toMatchObject({ input_schema: { type: "object" }, eager_input_streaming: true });
 
     expect(response).toMatchObject({ text: "Hello", stop: "tool_use", toolCalls: [{ id: "t1", name: "get_overview" }], usage: { inputTokens: 100, outputTokens: 5 } });
     expect(response.raw).toBe(content);
     expect(heard.join("")).toBe("Hello");
+  });
+
+  it("does not send the fallback option to the light model, which does not support it", async () => {
+    const { client, sent } = fakeClaude({ content: [say("ok")], stop_reason: "end_turn" });
+    const light = new ClaudeProvider({ role: "light", model: "claude-haiku-5-5", effort: "low", maxOutputTokens: 2000, client });
+    await light.chat({ system: "", messages: [{ role: "user", text: "Classify this" }], tools: [] });
+    expect(light.id).toBe("claude-light");
+    expect(sent[0]).toMatchObject({ model: "claude-haiku-5-5", max_tokens: 2000 });
+    expect(sent[0]).not.toHaveProperty("fallbacks");
+    expect(sent[0]).not.toHaveProperty("betas");
   });
 
   it("never runs tool requests from an answer that was cut off or declined", async () => {

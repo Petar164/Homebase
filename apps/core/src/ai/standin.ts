@@ -66,6 +66,7 @@ function describe(result: ToolResult): string {
 
 export class StandInProvider implements ModelProvider {
   readonly id = "standin";
+  readonly role = "standin" as const;
   readonly location = "local" as const;
   readonly model = "stand-in";
   private calls = 0;

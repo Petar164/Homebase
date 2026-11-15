@@ -13,11 +13,13 @@ import { useEffect, useRef } from "react";
 const ACTIVITY: Record<HeliosState, { spin: number; signals: number }> = {
   idle: { spin: 0.07, signals: 0.8 },
   listening: { spin: 0.03, signals: 2 },
+  transcribing: { spin: 0.05, signals: 4 },
   thinking: { spin: 0.1, signals: 7 },
-  searching: { spin: 0.14, signals: 12 },
+  retrieving: { spin: 0.14, signals: 12 },
   speaking: { spin: 0.06, signals: 4 },
   acting: { spin: 0.11, signals: 9 },
   presenting: { spin: 0.02, signals: 0.5 },
+  error: { spin: 0.01, signals: 0.1 },
 };
 
 type Point = { x: number; y: number; z: number };

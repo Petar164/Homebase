@@ -6,7 +6,7 @@ import type { Instance } from "../instance.ts";
 import { audit } from "../security/audit.ts";
 import type { Session } from "../security/sessions.ts";
 import { type Logger, newId } from "../util.ts";
-import { capReached, chooseProvider, costMicros, monthSpendMicros, recordEgress } from "./policy.ts";
+import { budgetStatus, chooseProvider, classifyRequest, costMicros, estimateMicros, recordEgress, reserve, settle, settleAbandoned, type Task, warningDue } from "./policy.ts";
 import { findTool, toolSpecs } from "./tools.ts";
 import { type ChatMessage, type ChatResponse, maxSensitivity, type ModelProvider, SENSITIVITY, type Sensitivity, type ToolCall, type ToolResult } from "./types.ts";
 
@@ -38,6 +38,7 @@ type MessageRow = {
   sensitivity: Sensitivity;
   provider: string | null;
   model: string | null;
+  route_reason: string | null;
   created_at: string;
 };
 
@@ -76,7 +77,7 @@ const SYSTEM_PROMPT = [
 function toVisible(row: MessageRow): ConversationMessage | null {
   if (row.role === "tool" || (row.role === "assistant" && !row.text.trim())) return null;
   if (row.role === "system" && row.content?.includes('"hidden":true')) return null; // context for the model, not for the screen
-  return { id: row.id, seq: row.seq, role: row.role, text: row.text, createdAt: row.created_at, model: row.model };
+  return { id: row.id, seq: row.seq, role: row.role, text: row.text, createdAt: row.created_at, model: row.model, route: row.route_reason };
 }
 
 export class Helios {
@@ -127,7 +128,7 @@ export class Helios {
 
   private rows(conversationId: string, limit: number): MessageRow[] {
     const rows = this.db
-      .prepare("SELECT id, seq, role, text, content, sensitivity, provider, model, created_at FROM messages WHERE conversation_id = ? ORDER BY seq DESC LIMIT ?")
+      .prepare("SELECT id, seq, role, text, content, sensitivity, provider, model, route_reason, created_at FROM messages WHERE conversation_id = ? ORDER BY seq DESC LIMIT ?")
       .all(conversationId, limit) as MessageRow[];
     return rows.reverse();
   }
@@ -140,7 +141,7 @@ export class Helios {
 
   private append(
     conversationId: string,
-    message: { role: MessageRow["role"]; text: string; content?: StoredContent; sensitivity: Sensitivity; provider?: string; model?: string; tokensIn?: number; tokensOut?: number },
+    message: { role: MessageRow["role"]; text: string; content?: StoredContent; sensitivity: Sensitivity; provider?: string; model?: string; routeReason?: string; tokensIn?: number; tokensOut?: number },
   ): MessageRow {
     const row = transaction(this.db, () => {
       const next = this.db.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM messages WHERE conversation_id = ?").get(conversationId) as { seq: number };
@@ -153,14 +154,15 @@ export class Helios {
         sensitivity: message.sensitivity,
         provider: message.provider ?? null,
         model: message.model ?? null,
+        route_reason: message.routeReason ?? null,
         created_at: this.now().toISOString(),
       };
       this.db
         .prepare(
-          `INSERT INTO messages (id, conversation_id, seq, role, text, content, sensitivity, provider, model, tokens_in, tokens_out, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (id, conversation_id, seq, role, text, content, sensitivity, provider, model, route_reason, tokens_in, tokens_out, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(created.id, conversationId, created.seq, created.role, created.text, created.content, created.sensitivity, created.provider, created.model, message.tokensIn ?? null, message.tokensOut ?? null, created.created_at);
+        .run(created.id, conversationId, created.seq, created.role, created.text, created.content, created.sensitivity, created.provider, created.model, created.route_reason, message.tokensIn ?? null, message.tokensOut ?? null, created.created_at);
       this.db.prepare("UPDATE conversations SET last_message_at = ? WHERE id = ?").run(created.created_at, conversationId);
       if (message.role === "user") {
         this.db.prepare("UPDATE conversations SET title = ? WHERE id = ? AND title = ''").run(message.text.slice(0, 80), conversationId);
@@ -196,7 +198,7 @@ export class Helios {
   /** The transcript from `fromSeq` in the form a model is given, with its highest sensitivity label. */
   private history(conversationId: string, fromSeq: number): History {
     const rows = this.db
-      .prepare("SELECT id, seq, role, text, content, sensitivity, provider, model, created_at FROM messages WHERE conversation_id = ? AND seq >= ? ORDER BY seq")
+      .prepare("SELECT id, seq, role, text, content, sensitivity, provider, model, route_reason, created_at FROM messages WHERE conversation_id = ? AND seq >= ? ORDER BY seq")
       .all(conversationId, fromSeq) as MessageRow[];
 
     const messages: ChatMessage[] = [];
@@ -204,8 +206,13 @@ export class Helios {
     let sensitivity: Sensitivity = "normal";
     let lastSensitiveSeq = 0;
 
-    rows.forEach((row, index) => {
+    rows.forEach((stored, index) => {
+      // Anything labelled secret is withheld from every model, local ones
+      // included. The model sees that something was there, not what.
+      const secret = stored.sensitivity === "secret";
+      const row: MessageRow = secret ? { ...stored, text: "[withheld: marked secret]", content: stored.role === "tool" ? stored.content : null, sensitivity: "normal" } : stored;
       const content = row.content ? (JSON.parse(row.content) as StoredContent) : {};
+      if (secret && content.results) content.results = content.results.map((result) => ({ ...result, output: "[withheld: marked secret]" }));
       const previous = messages.at(-1);
       let included = true;
 
@@ -239,7 +246,7 @@ export class Helios {
   // ---------- a turn ----------
 
   /** Handles one message from the owner and returns what was added to the transcript. */
-  async handleMessage(text: string, options: { conversationId?: string; channel?: "text" | "voice" } = {}): Promise<TurnResult> {
+  async handleMessage(text: string, options: { conversationId?: string; channel?: "text" | "voice"; reasoning?: "strong" } = {}): Promise<TurnResult> {
     if (this.busy) throw new AppError(409, "HELIOS is still answering the previous message.");
     this.busy = true;
     try {
@@ -253,18 +260,23 @@ export class Helios {
       }
       this.noteDate(conversationId);
       const message = this.append(conversationId, { role: "user", text, sensitivity: "private" });
-      return await this.run(conversationId, message.seq - 1);
+      return await this.run(conversationId, message.seq - 1, classifyRequest(text, this.instance.config, options.reasoning));
     } finally {
       this.busy = false;
       this.setState("idle");
     }
   }
 
-  private async run(conversationId: string, afterSeq: number): Promise<TurnResult> {
+  private async run(conversationId: string, afterSeq: number, task: Task): Promise<TurnResult> {
     const { config } = this.instance;
+    const { cloud: cloudConfig } = config.ai;
     const approvals: Approval[] = [];
     const note = (text: string) => this.append(conversationId, { role: "system", text, sensitivity: "normal" });
     const from = this.windowStart(conversationId);
+    // Providers that failed during this turn are not tried again in it.
+    const failed = new Set<string>();
+    let capped = false;
+    settleAbandoned(this.db, this.now());
     this.setState("thinking");
 
     for (let step = 0; step < MAX_STEPS; step++) {
@@ -272,13 +284,22 @@ export class Helios {
       const route = await chooseProvider({
         providers: this.providers,
         prefer: config.ai.prefer,
+        cloudEnabled: cloudConfig.enabled,
+        purpose: "conversation",
+        task,
         sensitivity: history.sensitivity,
         egressApproved: this.egressApproved(conversationId, history.lastSensitiveSeq),
-        capReached: capReached(this.db, config, this.now()),
+        capReached: capped || budgetStatus(this.db, config, this.now()).state === "capped",
+        exclude: failed,
       });
 
       if (route.kind === "none") {
         note(route.reason);
+        break;
+      }
+      if (route.kind === "use" && route.provider.role === "standin" && failed.size > 0) {
+        // Every real model failed. Fixed rules are not a substitute for an answer.
+        note("The model did not answer. Try again in a moment.");
         break;
       }
       if (route.kind === "needs_approval") {
@@ -287,7 +308,7 @@ export class Helios {
         const approval = this.createApproval({
           kind: "cloud_egress",
           tier: 2,
-          summary: `Send this conversation, which includes sensitive information, to ${route.provider.model}`,
+          summary: `Send this conversation, which includes sensitive information, to ${route.provider.model} (${route.reason})`,
           action: { provider: route.provider.id, model: route.provider.model, upToSeq: history.lastSensitiveSeq, preview: history.preview },
           conversationId,
         });
@@ -305,19 +326,37 @@ export class Helios {
         onText: (delta: string) => this.bus.publish({ type: "delta", conversationId, text: delta }),
       };
       const cloud = provider.location === "cloud";
-      const egress = { provider: provider.id, model: provider.model, purpose: "conversation", maxSensitivity: history.sensitivity, bytes: Buffer.byteLength(JSON.stringify([request.system, request.messages])), conversationId };
+      const egress = { provider: provider.id, model: provider.model, purpose: "conversation", maxSensitivity: history.sensitivity, bytes: Buffer.byteLength(JSON.stringify([request.system, request.messages, request.tools])), conversationId };
+
+      // Before a cloud call: set aside the most it can cost. If that does not
+      // fit in this month's budget, the call is not made.
+      let reservation: string | null = null;
+      if (cloud) {
+        const allowance = provider.role === "light" ? cloudConfig.maxOutputTokens.light : cloudConfig.maxOutputTokens.strong;
+        reservation = reserve(this.db, config, egress, estimateMicros(config, provider.model, egress.bytes, allowance), this.now());
+        if (!reservation) {
+          recordEgress(this.db, { ...egress, outcome: "blocked_by_cap" });
+          if (!capped) note(`This month's cloud budget of €${cloudConfig.budget.capEur} is used up, so nothing more is sent to cloud models. The local model can still answer.`);
+          capped = true;
+          continue; // route again, without the cloud
+        }
+      }
 
       let response: ChatResponse;
+      let warn = false;
       try {
         response = await provider.chat(request);
       } catch (error) {
-        this.log.error(`Model ${provider.id} failed: ${(error as Error).message}`);
-        if (cloud) recordEgress(this.db, { ...egress, outcome: "failed" });
-        note("The model did not answer. Try again in a moment.");
-        break;
+        // The error text can quote the request, so only its type is logged.
+        this.log.error(`Model ${provider.id} failed (${(error as Error).name}).`);
+        if (reservation) settle(this.db, reservation, { sent: false });
+        failed.add(provider.id);
+        continue; // another model may still be able to answer
       }
-      if (cloud) {
-        recordEgress(this.db, { ...egress, outcome: "sent", tokensIn: response.usage.inputTokens, tokensOut: response.usage.outputTokens, costMicros: costMicros(config, response.model, response.usage) });
+      if (reservation) {
+        // After the call: replace the estimate with what it really cost.
+        settle(this.db, reservation, { sent: true, tokensIn: response.usage.inputTokens, tokensOut: response.usage.outputTokens, costMicros: costMicros(config, response.model, response.usage) });
+        warn = warningDue(this.db, config, this.now());
       }
       if (response.stop === "refusal") {
         note("The model declined to answer that.");
@@ -332,17 +371,20 @@ export class Helios {
         sensitivity: history.sensitivity,
         provider: provider.id,
         model: response.model,
+        routeReason: route.reason,
         tokensIn: response.usage.inputTokens,
         tokensOut: response.usage.outputTokens,
       });
+      // Said after the answer, once per month.
+      if (warn) note(`Cloud spending this month has reached €${cloudConfig.budget.warnEur} of the €${cloudConfig.budget.capEur} limit.`);
       if (response.toolCalls.length === 0) break;
       if (step === MAX_STEPS - 1) {
         note("I stopped after several steps without finishing. Ask me again, more specifically.");
         break;
       }
 
-      // "Searching" when memory is being searched, "acting" for everything else.
-      this.setState(response.toolCalls.some((call) => findTool(call.name)?.searches) ? "searching" : "acting");
+      // "Retrieving" when memory is being searched, "acting" for everything else.
+      this.setState(response.toolCalls.some((call) => findTool(call.name)?.searches) ? "retrieving" : "acting");
       const results: ToolResult[] = [];
       let label: Sensitivity = "normal";
       for (const call of response.toolCalls) {
@@ -499,7 +541,9 @@ export class Helios {
         this.busy = true;
         try {
           const last = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM messages WHERE conversation_id = ?").get(conversationId) as { seq: number };
-          turn = await this.run(conversationId, last.seq);
+          // The owner just approved sending this conversation to the cloud
+          // model that asked, so the continued turn asks for that model.
+          turn = await this.run(conversationId, last.seq, { strongRequested: true, complex: true });
         } finally {
           this.busy = false;
           this.setState("idle");
@@ -517,13 +561,14 @@ export class Helios {
   async status(): Promise<HeliosStatus> {
     const models: HeliosStatus["models"] = [];
     for (const provider of this.providers) {
-      models.push({ id: provider.id, model: provider.model, location: provider.location, available: await provider.available() });
+      models.push({ id: provider.id, role: provider.role, model: provider.model, location: provider.location, available: await provider.available() });
     }
+    const budget = budgetStatus(this.db, this.instance.config, this.now());
     return {
       state: this.state,
       models,
-      cloudSpendUsd: monthSpendMicros(this.db, this.now()) / 1_000_000,
-      cloudCapUsd: this.instance.config.ai.cloud.monthlyCapUsd,
+      budget: { spentEur: budget.spentEur + budget.reservedEur, warnEur: budget.warnEur, capEur: budget.capEur, state: budget.state },
+      cloudEnabled: this.instance.config.ai.cloud.enabled,
     };
   }
 }

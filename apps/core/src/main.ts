@@ -26,8 +26,9 @@ try {
   const { ai } = instance.config;
   const providers = [
     new StandInProvider(),
-    new OllamaProvider({ baseUrl: ai.local.baseUrl, model: ai.local.model }),
-    new ClaudeProvider({ model: ai.cloud.model, effort: ai.cloud.effort }),
+    new OllamaProvider({ baseUrl: ai.local.baseUrl, model: ai.local.model, contextTokens: ai.local.contextTokens, keepAlive: ai.local.keepAlive, think: ai.local.think }),
+    new ClaudeProvider({ role: "strong", model: ai.cloud.strongModel, effort: ai.cloud.effort.strong, maxOutputTokens: ai.cloud.maxOutputTokens.strong }),
+    new ClaudeProvider({ role: "light", model: ai.cloud.lightModel, effort: ai.cloud.effort.light, maxOutputTokens: ai.cloud.maxOutputTokens.light }),
   ];
   const { app, helios } = await buildServer({ instance, log, webDir: WEB_DIST_DIR, extraHosts, providers });
   await app.listen({ host, port });

@@ -21,7 +21,7 @@ type StreamParams = Parameters<Anthropic["beta"]["messages"]["stream"]>[0];
 export type ClaudeClient = {
   beta: {
     messages: {
-      stream(params: Record<string, unknown>, options?: { signal?: AbortSignal }): {
+      stream(params: StreamParams, options?: { signal?: AbortSignal }): {
         on(event: "text", listener: (delta: string) => void): unknown;
         finalMessage(): Promise<Anthropic.Beta.BetaMessage>;
       };
@@ -39,7 +39,7 @@ export type ClaudeClient = {
  * turns first is allowed; changing anything else about earlier messages is
  * not, which is why the core never edits or trims a turn in progress.
  */
-export function toClaudeMessages(messages: ChatMessage[]): Param[] {
+export function toClaudeMessages(messages: ChatMessage[], providerId: string): Param[] {
   const lastUser = messages.findLastIndex((message) => message.role === "user");
   return messages.map((message, index): Param => {
     if (message.role === "user") return { role: "user", content: message.text };
@@ -49,7 +49,9 @@ export function toClaudeMessages(messages: ChatMessage[]): Param[] {
         content: message.results.map((result) => ({ type: "tool_result" as const, tool_use_id: result.id, content: result.output, is_error: result.isError })),
       };
     }
-    if (index > lastUser && message.provider === "claude" && Array.isArray(message.raw)) {
+    // Reasoning blocks are tied to the model that wrote them, so only this
+    // provider's own answers are replayed as-is.
+    if (index > lastUser && message.provider === providerId && Array.isArray(message.raw)) {
       return { role: "assistant", content: message.raw as Block[] };
     }
     const content: Anthropic.Beta.BetaContentBlockParam[] = [];
@@ -61,16 +63,23 @@ export function toClaudeMessages(messages: ChatMessage[]): Param[] {
 }
 
 export class ClaudeProvider implements ModelProvider {
-  readonly id = "claude";
+  readonly id: string;
+  readonly role: "strong" | "light";
   readonly location = "cloud" as const;
   readonly model: string;
   private readonly effort: Effort;
+  private readonly maxOutputTokens: number;
   private readonly env: NodeJS.ProcessEnv;
   private client: ClaudeClient | null;
 
-  constructor(options: { model: string; effort?: Effort; client?: ClaudeClient; env?: NodeJS.ProcessEnv }) {
+  constructor(options: { role?: "strong" | "light"; model: string; effort?: Effort; maxOutputTokens?: number; client?: ClaudeClient; env?: NodeJS.ProcessEnv }) {
+    this.role = options.role ?? "strong";
+    this.id = `claude-${this.role}`;
     this.model = options.model;
     this.effort = options.effort ?? "medium";
+    // Sent to the API as the limit for one answer, and therefore also the
+    // most a single call can cost in output (see the budget in policy.ts).
+    this.maxOutputTokens = options.maxOutputTokens ?? 8000;
     this.client = options.client ?? null;
     this.env = options.env ?? process.env;
   }
@@ -83,24 +92,27 @@ export class ClaudeProvider implements ModelProvider {
   async chat(request: ChatRequest): Promise<ChatResponse> {
     this.client ??= new Anthropic() as unknown as ClaudeClient;
 
-    const params = {
+    const params: StreamParams = {
       model: this.model,
-      max_tokens: 64_000,
+      max_tokens: this.maxOutputTokens,
       system: request.system,
       // eager_input_streaming: tool inputs arrive as they are written. The
       // API then no longer checks them, which is fine here: the core checks
       // every tool input against its schema before running anything.
       tools: request.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.inputSchema as Anthropic.Beta.BetaTool.InputSchema, eager_input_streaming: true })),
-      messages: toClaudeMessages(request.messages),
+      messages: toClaudeMessages(request.messages, this.id),
       // How hard the model thinks. Spoken answers should come quickly.
       output_config: { effort: this.effort },
       // Lets the unchanged beginning of the conversation be reused cheaply.
       cache_control: { type: "ephemeral" },
-      // If the model declines a request for policy reasons, the API may
-      // answer with another Claude model instead of returning nothing.
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-    } satisfies StreamParams;
+    };
+    // If the strong model declines a request for policy reasons, the API may
+    // answer with another Claude model instead of returning nothing. The
+    // light model (Haiku) has no such fallback and must not be sent this.
+    if (this.role === "strong") {
+      params.betas = ["server-side-fallback-2026-07-01"];
+      params.fallbacks = "default";
+    }
 
     let message: Anthropic.Beta.BetaMessage;
     for (let attempt = 0; ; attempt++) {
@@ -138,7 +150,11 @@ export class ClaudeProvider implements ModelProvider {
       toolCalls,
       stop,
       // Cached input is cheaper than this counts it; over-counting keeps the spending cap on the safe side.
-      usage: { inputTokens: usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0), outputTokens: usage.output_tokens },
+      usage: {
+        inputTokens: usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0),
+        cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
+        outputTokens: usage.output_tokens,
+      },
       model: message.model,
       raw: message.content,
     };

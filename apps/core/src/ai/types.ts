@@ -42,14 +42,25 @@ export type ChatResponse = {
   toolCalls: ToolCall[];
   /** Why the model stopped. "refusal" means the provider declined the request. */
   stop: "end" | "tool_use" | "max_tokens" | "refusal";
-  usage: { inputTokens: number; outputTokens: number };
+  /** cacheWriteTokens are input tokens the provider stored for reuse (billed above the normal rate). */
+  usage: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number };
   model: string;
   raw?: unknown;
 };
 
+/**
+ * What a provider is for. The router picks by role, never by model name:
+ *   local    the model on this machine; the default for ordinary requests
+ *   strong   the cloud model for hard reasoning
+ *   light    the cheap cloud model for extraction and background work
+ *   standin  fixed rules, used only while no real model exists
+ */
+export type ProviderRole = "local" | "strong" | "light" | "standin";
+
 export interface ModelProvider {
-  /** Short name used in logs and the database: "standin", "claude", "ollama". */
+  /** Short name used in logs and the database: "standin", "ollama", "claude-strong", "claude-light". */
   readonly id: string;
+  readonly role: ProviderRole;
   /** "cloud" providers send data off this machine and go through the approval gate. */
   readonly location: "local" | "cloud";
   readonly model: string;

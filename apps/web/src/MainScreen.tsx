@@ -13,11 +13,13 @@ const OVERVIEW_SECONDS = 20;
 const STATE_LABEL: Record<HeliosState, string> = {
   idle: "Idle",
   listening: "Listening",
+  transcribing: "Transcribing",
   thinking: "Thinking",
-  searching: "Searching memory",
+  retrieving: "Searching memory",
   speaking: "Speaking",
   acting: "Working",
   presenting: "Presenting",
+  error: "Something needs attention",
 };
 const STATUS_SECONDS = 60;
 
@@ -180,10 +182,10 @@ function ModelLine({ helios }: { helios: HeliosStatus }) {
         Model <span className={real.length > 0 ? "text-soft" : "text-salmon/80"}>{real.length > 0 ? real.map((model) => model.model).join(", ") : "none connected (stand-in)"}</span>
       </p>
       {usesCloud && (
-        <p>
+        <p className={helios.budget.state === "ok" ? "" : "text-salmon/80"}>
           Cloud this month{" "}
           <span className="text-soft">
-            ${helios.cloudSpendUsd.toFixed(2)} of ${helios.cloudCapUsd.toFixed(0)}
+            €{helios.budget.spentEur.toFixed(2)} of €{helios.budget.capEur.toFixed(0)}
           </span>
         </p>
       )}

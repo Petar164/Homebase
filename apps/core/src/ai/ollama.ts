@@ -45,16 +45,23 @@ const AVAILABILITY_SECONDS = 30;
 
 export class OllamaProvider implements ModelProvider {
   readonly id = "ollama";
+  readonly role = "local" as const;
   readonly location = "local" as const;
   readonly model: string;
   private readonly baseUrl: string;
   private readonly fetch: typeof fetch;
+  private readonly contextTokens: number;
+  private readonly keepAlive: string;
+  private readonly think: boolean;
   private checked: { at: number; ok: boolean } | null = null;
   private calls = 0;
 
-  constructor(options: { baseUrl: string; model: string; fetch?: typeof fetch }) {
+  constructor(options: { baseUrl: string; model: string; contextTokens?: number; keepAlive?: string; think?: boolean; fetch?: typeof fetch }) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.model = options.model;
+    this.contextTokens = options.contextTokens ?? 8192;
+    this.keepAlive = options.keepAlive ?? "10m";
+    this.think = options.think ?? false;
     this.fetch = options.fetch ?? fetch;
   }
 
@@ -82,6 +89,11 @@ export class OllamaProvider implements ModelProvider {
       body: JSON.stringify({
         model: this.model,
         stream: false,
+        // A fixed, modest context keeps GPU memory predictable; keep_alive
+        // keeps the model loaded between answers so the next one starts fast.
+        think: this.think,
+        keep_alive: this.keepAlive,
+        options: { num_ctx: this.contextTokens },
         messages: toOllamaMessages(request.system, request.messages),
         tools: request.tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } })),
       }),
