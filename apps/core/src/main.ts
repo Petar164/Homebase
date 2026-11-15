@@ -1,3 +1,6 @@
+import { ClaudeProvider } from "./ai/claude.ts";
+import { OllamaProvider } from "./ai/ollama.ts";
+import { StandInProvider } from "./ai/standin.ts";
 import { buildServer } from "./http/server.ts";
 import { openInstance, StartupRefused } from "./instance.ts";
 import { runBackupCycle } from "./jobs/backups.ts";
@@ -17,12 +20,23 @@ try {
   const instance = await openInstance({ dataDir: defaultDataDir(), log });
   const { host, port } = instance.config.http;
   const extraHosts = (process.env.HOMEBASE_DEV_HOSTS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
-  const { app } = await buildServer({ instance, log, webDir: WEB_DIST_DIR, extraHosts });
+  // The models HELIOS may use. Which one answers is decided per request
+  // (see ai/policy.ts): local first, the cloud behind the approval gate,
+  // and the rule-based stand-in only while no real model is set up.
+  const { ai } = instance.config;
+  const providers = [
+    new StandInProvider(),
+    new OllamaProvider({ baseUrl: ai.local.baseUrl, model: ai.local.model }),
+    new ClaudeProvider({ model: ai.cloud.model, effort: ai.cloud.effort }),
+  ];
+  const { app, helios } = await buildServer({ instance, log, webDir: WEB_DIST_DIR, extraHosts, providers });
   await app.listen({ host, port });
 
   log.info(`Home Base ${APP_VERSION} is running at http://${host === "127.0.0.1" ? "localhost" : host}:${port}`);
   log.info(`Data folder: ${instance.paths.root}`);
   if (!ownerExists(instance.db)) log.warn("No owner account yet. Create one with:  npm run homebase -- owner set-password");
+  const ready = (await helios.status()).models.filter((model) => model.available && model.id !== "standin");
+  log.info(ready.length > 0 ? `HELIOS models: ${ready.map((model) => `${model.model} (${model.location})`).join(", ")}` : "HELIOS has no model connected yet; the stand-in answers.");
 
   const backupCycle = () => runBackupCycle(instance, log).catch((error: Error) => log.error(`Backup cycle failed: ${error.message}`));
   void backupCycle();

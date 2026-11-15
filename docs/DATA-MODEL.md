@@ -52,7 +52,9 @@ stays readable when the database is the thing that was lost.
 | Table | Purpose | Key fields |
 |---|---|---|
 | `conversations` | One conversation, native or imported | `source` (`helios`, `claude_import`), `channel` (`voice`, `text`), `title`, `started_at`, `external_id`, `summary` |
-| `messages` | The transcript, never rewritten | `conversation_id`, `seq`, `role`, `text`, `model`, `tokens_in`, `tokens_out` |
+| `messages` | The transcript, never rewritten | `conversation_id`, `seq`, `role`, `text`, `content` (the model's full answer), `sensitivity`, `provider`, `model`, `tokens_in`, `tokens_out` |
+| `approvals` | Each time the owner was asked for a yes | `kind` (`tool`, `cloud_egress`), `tier`, `summary`, `action` (the exact request that runs if approved), `status`, `expires_at`, `decided_via`, `result` |
+| `egress_log` | Each cloud call, sent or held back | `at`, `provider`, `model`, `purpose`, `max_sensitivity`, `bytes`, `tokens_in`, `tokens_out`, `cost_micros`, `outcome`, `approval_id` |
 | `documents` | Indexed notes, files, PDFs, web pages | `kind`, `path`, `title`, `sha256`, `bytes`, `indexed_at`, `root_id` |
 | `file_roots` | Folders HELIOS may read or write | `path`, `access`, `default_sensitivity`, `approved_at` |
 | `chunks` | Searchable pieces of messages and documents | `owner_kind`, `owner_id`, `seq`, `text` |
@@ -79,8 +81,6 @@ Two rules are built into this shape:
 | `tools` | Registry of what HELIOS can do | `name`, `source` (`builtin`, `mcp`, `plugin`), `tier`, `schema`, `enabled` |
 | `integrations` | Connected services and MCP servers | `kind`, `name`, `config`, `status`, `scopes` |
 | `grants` | Standing permissions | `subject_kind`, `subject_id`, `tools`, `scope`, `max_tier`, `expires_at`, `revoked_at` |
-| `approvals` | Each time the owner was asked | `action`, `tier`, `status`, `decided_via`, `decided_at`, `session_id` |
-| `egress_log` | Each cloud call | `at`, `provider`, `model`, `purpose`, `max_sensitivity`, `bytes`, `approval_id` |
 | `workflows` | Saved, schedulable jobs | `name`, `definition`, `schedule`, `enabled`, `grant_id` |
 | `agent_runs` | One run of an agent or workflow | `kind`, `goal`, `status`, `started_at`, `ended_at`, `cost`, `scope`, `result_summary` |
 | `run_steps` | What a run did, step by step | `run_id`, `seq`, `kind`, `name`, `input`, `output`, `status` |

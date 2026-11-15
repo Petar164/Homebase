@@ -57,7 +57,8 @@ describe("a conversation", () => {
 
     // The transcript holds the whole exchange, including the tool traffic the screen hides.
     const roles = (instance.db.prepare("SELECT role FROM messages ORDER BY seq").all() as { role: string }[]).map((row) => row.role);
-    expect(roles).toEqual(["user", "assistant", "tool", "assistant"]);
+    // (The first row is the hidden note that tells the model today's date.)
+    expect(roles).toEqual(["system", "user", "assistant", "tool", "assistant"]);
     expect(events).toEqual(expect.arrayContaining(["state:thinking", "state:acting", "state:idle", "message"]));
     expect(helios.listConversations()[0]?.title).toBe("What is due this week?");
   });

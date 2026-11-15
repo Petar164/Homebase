@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@fastify/static": "^9.0.0",
     "@homebase/shared": "*",
     "fastify": "^5.0.0",

@@ -40,6 +40,8 @@ const configSchema = z.object({
       cloud: z
         .object({
           model: z.string().default("claude-opus-5-5"),
+          /** How hard the cloud model thinks. Lower answers faster and costs less. */
+          effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("medium"),
           /** Hard stop for cloud spending per calendar month, in US dollars. */
           monthlyCapUsd: z.number().min(0).default(10),
           /** Prices in US dollars per million tokens, used to track spending. */

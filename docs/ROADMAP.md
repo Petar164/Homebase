@@ -9,7 +9,7 @@ committed, so work can stop after any step without leaving a broken state.
 | Phase | State |
 |---|---|
 | 1. Foundation | Built and tested on a Mac. Not yet run on the Windows laptop |
-| 2. HELIOS core | Not started |
+| 2. HELIOS core | In progress: text conversation works with a stand-in model; real models and voice not yet run |
 | 3. Memory and second brain | Not started |
 | 4. Neural interface | Not started |
 | 5. Action and integrations | Not started |
@@ -61,26 +61,42 @@ Left over from this phase, to slot in where they are needed:
 
 Goal: talk to HELIOS by text and by voice, with every exchange stored.
 
-- One model interface with three implementations: Claude, a local model, a
-  scripted fake for tests.
-- A router that chooses between local and cloud, with the cloud approval
-  gate and a monthly cost cap.
-- Conversations and messages stored; state changes streamed to the screen.
-- Read-only tools over Home Base records; changes proposed by the model and
-  applied by the core after validation.
-- Voice worker, first version: push-to-talk, speech-to-text, spoken reply.
-  Then the wake word.
-- The core starts with Windows and keeps running with the screen closed.
-- Off-machine encrypted backup.
+Built so far (each with automated tests):
+
+- [x] One model interface with a rule-based stand-in, so everything around
+      the model works before a real one is connected.
+- [x] Conversations and messages stored; transcripts are never rewritten and
+      survive a restart.
+- [x] Tools with risk tiers. Reads run; changes wait for the owner's yes; an
+      approval runs exactly the action that was approved, once.
+- [x] The router: local first; a conversation holding sensitive data reaches
+      a cloud model only after approval; monthly cost cap; every cloud call
+      logged.
+- [x] The event stream, and the conversation on the screen with approval
+      requests. Checked by hand in a browser with the stand-in.
+- [x] Connections to Claude and to a local model through Ollama, written to
+      their documented interfaces and tested against fakes.
+
+Not done:
+
+- [ ] A first real call to Claude (needs an API key) and to a local model
+      (needs Ollama on the laptop). Until then both connections are unproven.
+- [ ] Keys in the operating system's protected storage instead of an
+      environment variable.
+- [ ] Voice worker: push-to-talk, speech-to-text, spoken reply, then the
+      wake word.
+- [ ] The core starting with Windows and running with the screen closed.
+- [ ] Off-machine encrypted backup.
 
 Done when:
 
 - [ ] "What is due this week?" typed or spoken gets a correct answer taken
       from the database, and the exchange is still there after a restart.
-- [ ] A request whose context includes sensitive data does not reach the
+      (Typed, with the stand-in: done. With a real model, and spoken: not yet.)
+- [x] A request whose context includes sensitive data does not reach the
       cloud until approved, and the egress log shows the decision.
 - [ ] Closing the browser does not stop HELIOS answering.
-- [ ] The monthly cap stops cloud calls when reached.
+- [x] The monthly cap stops cloud calls when reached.
 - [ ] Speech round trip on the laptop: under 3 seconds from end of speech to
       start of reply for a local answer.
 
@@ -178,18 +194,26 @@ can start without context.
 - Repository audit and design documents.
 - Phase 1 on a Mac: the core (data folder, migrations, snapshots, mirrors,
   restore, login, audit log, tasks and overview API, import), the
-  `homebase` command and the first screen. 45 automated tests pass.
+  `homebase` command and the first screen.
+- Phase 2, first part: HELIOS's core loop, tools with risk tiers, approvals,
+  the cloud approval gate and cost cap, the event stream, the conversation
+  on the screen, and connections to Claude and Ollama. 69 automated tests.
 
 **Not done / not verified**
 
 - Nothing has run on the Windows laptop.
+- No real model has answered yet. The Claude and Ollama connections are
+  tested against fakes only.
 - No real Home Base exists yet. The owner account, the first real import
   and the external-drive mirror are set up on the machine that will run it.
 
 **Next**
 
-1. Phase 2, in this order: the model interface with a scripted fake model,
-   conversations and messages in the database, a text conversation with
-   HELIOS on the screen, the state stream to the brain, the router with the
-   cloud approval gate and cost cap, then the voice worker.
-2. A setup session on the Windows laptop.
+1. Needs the owner: an Anthropic API key (and a monthly cap he is happy
+   with), then one real conversation to prove the Claude connection.
+2. Protected storage for keys (macOS Keychain, Windows Credential Manager).
+3. The voice worker (Python): start with push-to-talk on the Mac, since the
+   pipeline can be developed before the laptop session.
+4. Phase 3 can start in parallel: the importer for Claude conversation
+   exports and full-text search do not need a model.
+5. A setup session on the Windows laptop.

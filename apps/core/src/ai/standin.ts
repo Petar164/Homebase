@@ -14,7 +14,13 @@ const HELP =
 function lastUserText(messages: ChatMessage[]): string {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
-    if (message?.role === "user") return message.text;
+    // Notes the core adds for context are not something the owner asked.
+    if (message?.role === "user") {
+      return message.text
+        .split("\n\n")
+        .filter((part) => !part.startsWith("(Note from Home Base"))
+        .join("\n\n");
+    }
   }
   return "";
 }

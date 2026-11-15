@@ -11,7 +11,7 @@ Related documents: [data model](DATA-MODEL.md), [persistence](PERSISTENCE.md),
 
 ```
  TV (kiosk browser) ──┐
- Laptop browser     ──┤  HTTP + WebSocket, this machine only
+ Laptop browser     ──┤  HTTP + a live event stream, this machine only
  Phone (later)      ──┤  (private network later)
                       ▼
         ┌──────────────────────────────────────────────┐
@@ -62,7 +62,7 @@ Here every schema change is a reviewed SQL file that runs once, inside a
 transaction, after an automatic snapshot.
 
 **The screen is a single-page React app served by the core.** It needs no
-server rendering. It needs a WebSocket, a 3D canvas and to be reachable later
+server rendering. It needs a live event stream, a 3D canvas and to be reachable later
 from a phone. One process, one port.
 
 **The voice worker is a separate small program.** Speech recognition and
@@ -94,7 +94,7 @@ without touching the core.
 1. The voice worker hears the wake word, records until the speaker stops and
    turns the audio into text. It sends the text to the core.
 2. The core stores the message in the conversation and sets the state to
-   *thinking*. The screen sees the state over the WebSocket and the brain
+   *thinking*. The screen sees the state over the event stream and the brain
    changes.
 3. The orchestrator asks memory for relevant context, and builds a prompt.
    Every piece of context carries a sensitivity label.
