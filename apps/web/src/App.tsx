@@ -3,6 +3,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "./api.ts";
 import { Brain } from "./components/Brain.tsx";
 import { Main } from "./MainScreen.tsx";
+import { SalesScreen } from "./SalesScreen.tsx";
 
 /**
  * Decides between the login page and the main screen. This is a courtesy to
@@ -11,6 +12,14 @@ import { Main } from "./MainScreen.tsx";
  */
 export function App() {
   const [session, setSession] = useState<SessionInfo | null>(null);
+  // Which screen is showing follows the address (#/sales), so the browser's
+  // back button and a bookmark both work.
+  const [route, setRoute] = useState(() => window.location.hash);
+  useEffect(() => {
+    const onChange = () => setRoute(window.location.hash);
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
 
   const refresh = useCallback(() => {
     api<SessionInfo>("GET", "/api/auth/session")
@@ -21,6 +30,7 @@ export function App() {
 
   if (!session) return <div className="h-full bg-void" />;
   if (!session.authenticated) return <Login session={session} onDone={refresh} />;
+  if (route === "#/sales") return <SalesScreen onBack={() => (window.location.hash = "")} />;
   return <Main onLoggedOut={refresh} />;
 }
 

@@ -154,9 +154,14 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
 
         <section className="col-start-3 row-start-2 mt-10 flex min-h-0 flex-col items-end gap-8 text-right">
           {overview && <Numbers overview={overview} />}
-          <button type="button" onClick={logout} className="mt-auto text-xs tracking-widest text-mute uppercase hover:text-bone">
-            Log out
-          </button>
+          <div className="mt-auto flex gap-5 text-xs tracking-widest uppercase">
+            <a href="#/sales" className="text-mute hover:text-bone">
+              Sales
+            </a>
+            <button type="button" onClick={logout} className="tracking-widest text-mute uppercase hover:text-bone">
+              Log out
+            </button>
+          </div>
         </section>
 
         <footer className="col-span-3 row-start-3 mt-6">{overview && <Week days={overview.week} today={overview.today} />}</footer>

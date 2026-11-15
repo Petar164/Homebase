@@ -202,8 +202,9 @@ can start without context.
   HELIOS tool.
 - Sales, stock and buyers in the core: one invoice number per sale for
   ever, a stock item sold once, a sale complete only with every invoice
-  field, returning buyers recognised. API only, no screen yet.
-  76 automated tests in total.
+  field, returning buyers recognised. With a sales screen: pick an item
+  from stock, paste the buyer's address, see what an invoice still needs.
+  Checked by hand in a browser. 76 automated tests in total.
 - A written plan for the first session on the laptop
   ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)).
 
@@ -219,10 +220,9 @@ can start without context.
 
 Does not need the owner:
 
-1. The sales screen (stock list, a sale form that shows what is still
-   missing, pasting an address), on top of the sales API that now exists.
-   Then the training log and calendar entries (tables and import exist;
-   API and screens do not).
+1. The rest of the Home Base screens: the invoice as a PDF, taxes and
+   analytics from the logged sales, the training log and calendar entries
+   (tables and import exist; API and screens do not).
 2. The importer for Claude conversation exports, written tolerantly and
    then checked against a real export.
 
