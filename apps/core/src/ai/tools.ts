@@ -167,7 +167,13 @@ export const TOOLS: Tool[] = [
     description: "Adds a task to the owner's list. The owner is asked to confirm before it is saved.",
     tier: 1,
     sensitivity: "private",
-    input: taskCreateSchema,
+    // The same rules as the screen's form, with the date format spelled out:
+    // a small local model otherwise writes "tomorrow" where a date belongs.
+    input: taskCreateSchema.extend({
+      due: taskCreateSchema.shape.due.describe('The deadline as a calendar date, YYYY-MM-DD, worked out from today\'s date. Use "" for no deadline. Never a word such as "tomorrow".'),
+      area: taskCreateSchema.shape.area.describe('Which part of life this belongs to. Use "inbox" when unsure.'),
+      repeat: taskCreateSchema.shape.repeat.describe('"w" for weekly, "m" for monthly, "" for once.'),
+    }),
     describe: (input) => `Add the task "${input.title}"${input.due ? `, due ${input.due}` : ""}`,
     run(input, { db }) {
       const task = createTask(db, input);

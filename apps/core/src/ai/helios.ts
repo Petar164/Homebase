@@ -212,7 +212,15 @@ export class Helios {
 
   /** Tells the model what day it is, once per day per conversation, without showing it on screen. */
   private noteDate(conversationId: string): void {
-    const text = `Today is ${this.now().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}.`;
+    // The coming two weeks are listed with their weekdays: small models are
+    // unreliable at working out "next Friday" from a date alone.
+    const today = this.now();
+    const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const coming = Array.from({ length: 14 }, (_, index) => {
+      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + index + 1);
+      return `${date.toLocaleDateString("en-GB", { weekday: "short" })} ${iso(date)}`;
+    });
+    const text = `Today is ${today.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} (${iso(today)}). The days after it: ${coming.join(", ")}.`;
     const last = this.db
       .prepare("SELECT text FROM messages WHERE conversation_id = ? AND role = 'system' AND content LIKE '%\"hidden\":true%' ORDER BY seq DESC LIMIT 1")
       .get(conversationId) as { text: string } | undefined;
