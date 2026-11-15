@@ -341,7 +341,8 @@ export class Helios {
         break;
       }
 
-      this.setState("acting");
+      // "Searching" when memory is being searched, "acting" for everything else.
+      this.setState(response.toolCalls.some((call) => findTool(call.name)?.searches) ? "searching" : "acting");
       const results: ToolResult[] = [];
       let label: Sensitivity = "normal";
       for (const call of response.toolCalls) {
@@ -384,9 +385,10 @@ export class Helios {
     }
 
     try {
-      const output = tool.run(parsed.data, { db: this.db, now: this.now() });
+      const ran = tool.run(parsed.data, { db: this.db, now: this.now(), conversationId });
+      const output = typeof ran === "string" ? ran : ran.output;
       audit(this.db, { actor: "helios", action: "tool.run", target: tool.name, detail: { tier: tool.tier } });
-      return { result: { id: call.id, name: call.name, output, isError: false }, sensitivity: tool.sensitivity };
+      return { result: { id: call.id, name: call.name, output, isError: false }, sensitivity: typeof ran === "string" ? tool.sensitivity : ran.sensitivity };
     } catch (error) {
       if (error instanceof AppError) return fail(error.message);
       this.log.error(`Tool ${tool.name} failed: ${(error as Error).stack ?? error}`);
@@ -479,7 +481,8 @@ export class Helios {
       let ok = false;
       if (tool && parsed?.success) {
         try {
-          result = tool.run(parsed.data, { db: this.db, now: this.now() });
+          const ran = tool.run(parsed.data, { db: this.db, now: this.now(), conversationId: conversationId ?? "" });
+          result = typeof ran === "string" ? ran : ran.output;
           ok = true;
         } catch (error) {
           result = error instanceof AppError ? error.message : "The action failed.";

@@ -231,3 +231,52 @@ describe("local or cloud", () => {
     expect((await helios.status()).cloudSpendUsd).toBeGreaterThan(0.01);
   });
 });
+
+describe("memory", () => {
+  it("finds what was said in an earlier conversation", async () => {
+    const model = new ScriptedProvider("local", "local", [
+      { text: "Noted: the darkroom budget is 900 a month." },
+      { text: "Understood." },
+      { toolCalls: [call("search_conversations", { query: "darkroom budget" })] },
+      { text: "You set it at 900 a month." },
+    ]);
+    const { instance, helios, events } = await setup([model]);
+    await helios.handleMessage("My budget for the darkroom is 900 a month");
+    await helios.handleMessage("Unrelated: remind me about the weather");
+    events.length = 0;
+
+    await helios.handleMessage("What did I decide about the darkroom budget?");
+    const results = model.requests.at(-1)?.messages.at(-1);
+    expect(JSON.stringify(results)).toContain("900 a month");
+    expect(events).toContain("state:searching");
+    // The hidden date note and tool traffic are not in the index.
+    const indexed = instance.db.prepare("SELECT COUNT(*) AS n FROM messages_fts").get() as { n: number };
+    const visible = instance.db.prepare("SELECT COUNT(*) AS n FROM messages WHERE role IN ('user', 'assistant') AND text != ''").get() as { n: number };
+    expect(indexed.n).toBe(visible.n);
+  });
+
+  it("treats search input as words, never as search syntax", async () => {
+    const { searchConversations, toSearchExpression } = await import("../src/ai/memory.ts");
+    const { instance, helios } = await setup();
+    await helios.handleMessage("What is due?");
+    expect(toSearchExpression('focus" OR text:* NEAR(-x')).toBe('"focus" OR "or" OR "text" OR "near"');
+    expect(() => searchConversations(instance.db, '"unbalanced AND (((')).not.toThrow();
+    expect(searchConversations(instance.db, "!!! ??")).toEqual([]);
+    expect(searchConversations(instance.db, "due").length).toBeGreaterThan(0); // the owner's own words are found
+  });
+
+  it("keeps a recalled sensitive passage away from the cloud until approved", async () => {
+    const cloud = new ScriptedProvider("cloud", "cloud", [
+      { toolCalls: [call("get_money_summary", { month: "2026-11" })] },
+      { text: "Revenue was zero." },
+      { toolCalls: [call("search_conversations", { query: "revenue" })] },
+    ]);
+    const { helios } = await setup([cloud]);
+    const first = await helios.handleMessage("How much revenue this month?");
+    await helios.decide(first.approvals[0]?.id as string, "approve", null); // the first conversation is approved and answered
+
+    // A new conversation recalls that sensitive answer: it must be held again.
+    const second = await helios.handleMessage("What was said about revenue?");
+    expect(second.approvals[0]).toMatchObject({ kind: "cloud_egress", status: "pending" });
+  });
+});

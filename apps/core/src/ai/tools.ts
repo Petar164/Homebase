@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { buildOverview } from "../domain/overview.ts";
 import { createTask, listTasks, updateTask } from "../domain/tasks.ts";
+import { hitsSensitivity, searchConversations } from "./memory.ts";
 import type { Sensitivity, ToolSpec } from "./types.ts";
 
 // What HELIOS can do. A model never touches the database: it can only ask
@@ -24,10 +25,13 @@ export type Tool<Input = unknown> = {
   tier: 0 | 1 | 2 | 3;
   /** The label of whatever this tool returns. */
   sensitivity: Sensitivity;
+  /** Set for tools that search memory, so the screen can show "searching". */
+  searches?: boolean;
   input: z.ZodType<Input>;
   /** One line shown to the owner when a yes is needed. */
   describe(input: Input): string;
-  run(input: Input, context: { db: Db; now: Date }): string;
+  /** Returns the output, or the output with its own label when that depends on what was found. */
+  run(input: Input, context: { db: Db; now: Date; conversationId: string }): string | { output: string; sensitivity: Sensitivity };
 };
 
 function define<Input>(tool: Tool<Input>): Tool {
@@ -115,6 +119,23 @@ export const TOOLS: Tool[] = [
         otherMoneyIn: money(total("in")),
         otherMoneyOut: money(total("out")),
       });
+    },
+  }),
+
+  define({
+    name: "search_conversations",
+    description:
+      "Searches everything the owner and HELIOS said in earlier conversations and returns the best matching passages with their dates. " +
+      "Use it when the owner asks what was said, decided or planned before. Search with a few key words, not a full sentence.",
+    tier: 0,
+    sensitivity: "private",
+    searches: true,
+    input: z.object({ query: z.string().trim().min(2).max(200).describe("Key words to look for") }),
+    describe: (input) => `Search earlier conversations for "${input.query}"`,
+    run(input, { db, conversationId }) {
+      const hits = searchConversations(db, input.query, { excludeConversationId: conversationId });
+      const output = JSON.stringify(hits.map((hit) => ({ when: hit.at.slice(0, 10), conversation: hit.conversationTitle, saidBy: hit.role === "user" ? "owner" : "HELIOS", passage: hit.snippet })));
+      return { output, sensitivity: hitsSensitivity(hits) };
     },
   }),
 

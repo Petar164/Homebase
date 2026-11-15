@@ -8,7 +8,7 @@ import type { ChatMessage, ChatRequest, ChatResponse, ModelProvider, ToolResult 
 
 const HELP =
   "I am running without a language model for now, so I only understand a few requests: " +
-  '"what is due", "list my tasks", "add a task ...", and "money this month". ' +
+  '"what is due", "list my tasks", "add a task ...", "money this month" and "what did I say about ...". ' +
   "Connect a model to talk freely.";
 
 function lastUserText(messages: ChatMessage[]): string {
@@ -52,6 +52,11 @@ function describe(result: ToolResult): string {
     if (tasks.length === 0) return "No tasks match.";
     return tasks.map((task) => `${task.title}${task.due ? ` (${task.due})` : ""}`).join("; ");
   }
+  if (result.name === "search_conversations") {
+    const hits = JSON.parse(result.output) as { when: string; passage: string }[];
+    if (hits.length === 0) return "I found nothing about that in earlier conversations.";
+    return `I found ${hits.length}: ${hits.slice(0, 3).map((hit) => `on ${hit.when}, "${hit.passage}"`).join("; ")}`;
+  }
   if (result.name === "get_money_summary") {
     const sales = data.sales as { count: number; revenue: string; costOfGoods: string };
     return `In ${String(data.month)}: ${sales.count} sale(s), revenue ${sales.revenue}, cost of goods ${sales.costOfGoods}. Other money in ${String(data.otherMoneyIn)}, out ${String(data.otherMoneyOut)}.`;
@@ -93,6 +98,8 @@ export class StandInProvider implements ModelProvider {
 
     const add = /^(?:please\s+)?(?:add|create|new)\s+(?:a\s+)?task(?:\s+to|:)?\s+(.+)$/i.exec(text) ?? /^remind me to\s+(.+)$/i.exec(text);
     if (add?.[1]) return use("add_task", { title: add[1].replace(/[.!]+$/, ""), area: "inbox" });
+    const recall = /^(?:what did (?:i|we) say about|search(?: for)?|find|do you remember)\s+(.+?)\??$/i.exec(text);
+    if (recall?.[1]) return use("search_conversations", { query: recall[1] });
     if (/\b(money|revenue|sales|profit|earned)\b/.test(lower)) return use("get_money_summary", { month: new Date().toISOString().slice(0, 7) });
     if (/\b(list|show|which)\b.*\btasks?\b/.test(lower)) return use("list_tasks", { show: /\blate\b/.test(lower) ? "late" : "open" });
     if (/\b(due|late|today|this week|focus|next|overview|status|should i do)\b/.test(lower)) return use("get_overview", {});
