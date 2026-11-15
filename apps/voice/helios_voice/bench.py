@@ -3,6 +3,7 @@ this machine.
 
     uv run python -m helios_voice.bench --out results.json
     uv run python -m helios_voice.bench --ollama http://127.0.0.1:11434 --model qwen3.5:4b
+    uv run python -m helios_voice.bench --ollama http://127.0.0.1:11434 --context 8192 4096
 
 Rules of this benchmark:
   - Every model is measured in its own fresh process, so the memory figure
@@ -290,14 +291,14 @@ def child_together(clips_path: str) -> dict:
 # ---------- the local language model, through Ollama ----------
 
 
-def ollama(base: str, model: str) -> dict:
+def ollama(base: str, model: str, context: int = 8192) -> dict:
     def post(path: str, body: dict) -> dict:
         request = urllib.request.Request(f"{base}{path}", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(request, timeout=300) as response:
             return json.load(response)
 
     def chat(prompt: str) -> dict:
-        body = {"model": model, "stream": False, "think": False, "options": {"num_ctx": 8192}, "messages": [{"role": "system", "content": "You are HELIOS. Answer in one or two short sentences."}, {"role": "user", "content": prompt}]}
+        body = {"model": model, "stream": False, "think": False, "options": {"num_ctx": context}, "messages": [{"role": "system", "content": "You are HELIOS. Answer in one or two short sentences."}, {"role": "user", "content": prompt}]}
         data, ms = timed(lambda: post("/api/chat", body))
         return {"total_ms": round(ms), "load_ms": round(data.get("load_duration", 0) / 1e6), "answer_tokens": data.get("eval_count"), "tokens_per_second": round(data.get("eval_count", 0) / max(data.get("eval_duration", 1) / 1e9, 1e-9), 1)}
 
@@ -311,12 +312,28 @@ def ollama(base: str, model: str) -> dict:
         "model": model,
         "quantisation": info.get("quantization_level"),
         "parameters": info.get("parameter_size"),
-        "context_tokens": 8192,
+        "context_tokens": context,
         "cold_start": cold,
         "warm": {"median_total_ms": round(statistics.median(entry["total_ms"] for entry in warm)), "median_tokens_per_second": round(statistics.median(entry["tokens_per_second"] for entry in warm), 1)},
         "loaded_size_mb": round(loaded[0]["size"] / 1048576) if loaded else None,
         "of_which_on_gpu_mb": round(loaded[0].get("size_vram", 0) / 1048576) if loaded else None,
+        # More than zero here means the model did not fit on the GPU and part of it runs from ordinary memory.
+        "of_which_in_ordinary_memory_mb": round((loaded[0]["size"] - loaded[0].get("size_vram", 0)) / 1048576) if loaded else None,
     }
+
+
+def local_model(base: str, model: str, contexts: list[int]) -> dict:
+    """The local model at each context size asked for. The first is the one
+    HELIOS is set to; the model is unloaded before each, so every memory
+    figure belongs to its own context size."""
+    results = {}
+    for index, context in enumerate(contexts):
+        name = "local_language_model" if index == 0 else f"local_language_model_at_{context}_tokens"
+        try:
+            results[name] = ollama(base, model, context)
+        except Exception as error:
+            results[name] = {"context_tokens": context, "error": f"{type(error).__name__}: {error}"[:300]}
+    return results
 
 
 # ---------- the parent ----------
@@ -348,6 +365,7 @@ def main() -> None:
     parser.add_argument("--out", default="")
     parser.add_argument("--ollama", default="")
     parser.add_argument("--model", default="qwen3.5:4b")
+    parser.add_argument("--context", type=int, nargs="+", default=[8192], help="tokens of context to measure the local model at, the one HELIOS uses first")
     args = parser.parse_args()
 
     if args.child:
@@ -374,10 +392,7 @@ def main() -> None:
             results[name] = run_child(name, clips)
     if args.ollama:
         print("measuring the local language model ...", file=sys.stderr, flush=True)
-        try:
-            results["local_language_model"] = ollama(args.ollama.rstrip("/"), args.model)
-        except Exception as error:
-            results["local_language_model"] = {"error": f"{type(error).__name__}: {error}"[:300]}
+        results.update(local_model(args.ollama.rstrip("/"), args.model, args.context))
 
     text = json.dumps(results, indent=2)
     if args.out:
