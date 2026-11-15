@@ -26,7 +26,20 @@ export type VoiceStatus = {
   lastError: { code: string; message: string; at: string } | null;
   restarts: number;
   /** Timings of the last exchange, in milliseconds. */
-  last: { audioMs: number; transcribeMs: number; firstSoundMs: number | null } | null;
+  last: {
+    audioMs: number;
+    transcribeMs: number;
+    /** The worker's own figure: from the first sentence reaching it to that sentence being ready to play. */
+    firstSoundMs: number | null;
+    /**
+     * The whole exchange on the core's clock, counted from the moment
+     * listening ended: the talk button was released, or the worker heard
+     * the end of speech. `firstSoundMs` here is the moment the first
+     * sentence was handed to the speakers; the delay of the sound system
+     * itself comes on top. Null when nobody was listening first.
+     */
+    sinceListeningEnded: { transcriptMs: number; firstTextMs: number | null; firstSoundMs: number | null } | null;
+  } | null;
 };
 
 /** Waits between restarts after a crash, in milliseconds. After the last one the service gives up. */
@@ -79,6 +92,10 @@ export class VoiceService {
   /** The answer being spoken: its id, the text not yet sent as a sentence, and everything sent. */
   private answer: { id: string; pending: string; spoken: string } | null = null;
   private lastSpoken: { text: string; at: number } = { text: "", at: 0 };
+  /** When listening last ended, until the transcript for it arrives. */
+  private listeningEndedAt: number | null = null;
+  /** The exchange being timed: when its listening ended, and the answer that belongs to it. */
+  private timed: { endedAt: number; answerId: string | null } | null = null;
 
   constructor(deps: {
     helios: Helios;
@@ -171,14 +188,17 @@ export class VoiceService {
 
   listenStart(): void {
     this.trigger = "talk";
+    this.listeningEndedAt = null;
     this.send({ type: "listen_start" }); // the worker stops any speech first
   }
 
   listenStop(): void {
+    this.listeningEndedAt = this.now(); // the clock for "how long until HELIOS answers" starts here
     this.send({ type: "listen_stop" });
   }
 
   listenCancel(): void {
+    this.listeningEndedAt = null;
     this.send({ type: "listen_cancel" });
   }
 
@@ -253,6 +273,9 @@ export class VoiceService {
         this.transport?.send({ type: "devices" });
         break;
       case "state":
+        // After the wake word the worker ends listening by itself, with no
+        // button released: its change to "transcribing" is the moment then.
+        if (event.state === "transcribing") this.listeningEndedAt ??= this.now();
         this.setState(event.state);
         break;
       case "devices":
@@ -261,13 +284,29 @@ export class VoiceService {
       case "wake_detected":
         this.trigger = "wake";
         break;
-      case "transcript":
-        this.last = { audioMs: event.audio_ms, transcribeMs: event.decode_ms, firstSoundMs: null };
+      case "transcript": {
+        const endedAt = this.listeningEndedAt;
+        this.listeningEndedAt = null;
+        this.timed = endedAt === null ? null : { endedAt, answerId: null };
+        this.last = {
+          audioMs: event.audio_ms,
+          transcribeMs: event.decode_ms,
+          firstSoundMs: null,
+          sinceListeningEnded: endedAt === null ? null : { transcriptMs: this.now() - endedAt, firstTextMs: null, firstSoundMs: null },
+        };
         void this.onTranscript(event.text);
         break;
-      case "speech_started":
+      }
+      case "speech_started": {
         if (this.last) this.last.firstSoundMs = event.latency_ms;
+        const timings = this.last?.sinceListeningEnded;
+        if (timings && this.timed && event.id === this.timed.answerId && timings.firstSoundMs === null) {
+          timings.firstSoundMs = this.now() - this.timed.endedAt;
+          // Durations only, never what was said.
+          this.log.info(`Spoken turn: transcript after ${timings.transcriptMs} ms, first text after ${timings.firstTextMs ?? "?"} ms, first sound after ${timings.firstSoundMs} ms.`);
+        }
         break;
+      }
       case "speech_finished":
         this.lastSpoken.at = this.now();
         break;
@@ -294,6 +333,7 @@ export class VoiceService {
     const speak = this.settings.speakReplies;
     const answer = { id: newId(), pending: "", spoken: "" };
     if (speak) this.answer = answer;
+    if (speak && this.timed) this.timed.answerId = answer.id;
     try {
       const continuing = this.conversation && this.now() - this.conversation.at < CONTINUE_WITHIN_MS ? this.conversation.id : undefined;
       const turn = await this.helios.handleMessage(heard, { conversationId: continuing, channel: "voice" });
@@ -344,6 +384,8 @@ export class VoiceService {
   private speakSentence(text: string): void {
     const sentence = text.trim();
     if (!this.answer || !sentence) return;
+    const timings = this.last?.sinceListeningEnded;
+    if (timings && timings.firstTextMs === null && this.timed?.answerId === this.answer.id) timings.firstTextMs = this.now() - this.timed.endedAt;
     this.answer.spoken += `${sentence} `;
     this.transport?.send({ type: "speak", id: this.answer.id, text: sentence });
   }

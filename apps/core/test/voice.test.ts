@@ -55,6 +55,8 @@ class StreamingProvider implements ModelProvider {
   readonly location = "local" as const;
   readonly model = "streaming-model";
   failWith: Error | null = null;
+  /** Called before each piece is written: a test can let time pass here. */
+  beforePiece: (index: number) => void = () => {};
   private pieces: string[];
   constructor(pieces: string[]) {
     this.pieces = pieces;
@@ -64,7 +66,10 @@ class StreamingProvider implements ModelProvider {
   }
   async chat(request: ChatRequest): Promise<ChatResponse> {
     if (this.failWith) throw this.failWith;
-    for (const piece of this.pieces) request.onText?.(piece);
+    for (const [index, piece] of this.pieces.entries()) {
+      this.beforePiece(index);
+      request.onText?.(piece);
+    }
     return { text: this.pieces.join(""), toolCalls: [], stop: "end", usage: { inputTokens: 1, outputTokens: 1 }, model: this.model };
   }
 }
@@ -125,7 +130,63 @@ describe("speech becomes conversation", () => {
     expect(worker().spoken().length).toBeGreaterThan(1); // sentence by sentence
     const commands = worker().sent.map((command) => command.type);
     expect(commands.at(-1)).toBe("speak_end");
-    expect(voice.status().last).toEqual({ audioMs: 1800, transcribeMs: 120, firstSoundMs: null });
+    expect(voice.status().last).toEqual({ audioMs: 1800, transcribeMs: 120, firstSoundMs: null, sinceListeningEnded: null });
+  });
+
+  it("times a spoken turn from the release of the talk button to the first sound", async () => {
+    const model = new StreamingProvider(["First sentence here. ", "Second one follows."]);
+    const { voice, worker, answered, advance, logged } = await setup([model]);
+    model.beforePiece = (index) => advance(index === 0 ? 100 : 500); // the model thinks, then writes
+    voice.listenStart();
+    advance(2_000); // the owner speaks
+    voice.listenStop(); // the clock starts here, not when the worker reacts
+    advance(40);
+    worker().emit({ type: "state", state: "transcribing" });
+    advance(260);
+    worker().emit(heard("Tell me something")); // the transcript arrives 300 ms after the release
+    await answered(); // first sentence after 100 ms more, the second 500 ms after that
+    advance(200);
+    // A voice that is only being tried out is not this answer's first sound.
+    worker().emit({ type: "speech_started", id: "a-voice-being-tried-out", latency_ms: 90 });
+    expect(voice.status().last?.sinceListeningEnded?.firstSoundMs).toBeNull();
+    advance(250);
+    const answerId = (worker().sent.find((command) => command.type === "speak") as { id: string }).id;
+    worker().emit({ type: "speech_started", id: answerId, latency_ms: 200 });
+
+    expect(voice.status().last).toEqual({
+      audioMs: 1800,
+      transcribeMs: 120,
+      firstSoundMs: 200,
+      sinceListeningEnded: { transcriptMs: 300, firstTextMs: 400, firstSoundMs: 1350 },
+    });
+    expect(logged).toContain("Spoken turn: transcript after 300 ms, first text after 400 ms, first sound after 1350 ms.");
+    expect(logged.join("\n")).not.toMatch(/sentence|something/i); // durations only
+
+    // Later sentences of the same answer do not move the figure.
+    advance(5_000);
+    worker().emit({ type: "speech_started", id: answerId, latency_ms: 90 });
+    expect(voice.status().last?.sinceListeningEnded?.firstSoundMs).toBe(1350);
+  });
+
+  it("after the wake word, counts from the end of speech the worker heard", async () => {
+    const { voice, worker, answered, advance } = await setup();
+    worker().emit({ type: "wake_detected", score: 0.9 });
+    worker().emit({ type: "state", state: "listening" });
+    advance(3_000);
+    worker().emit({ type: "state", state: "transcribing" }); // no button: the worker ended listening by itself
+    advance(180);
+    worker().emit(heard("What is due this week?"));
+    await answered();
+    expect(voice.status().last?.sinceListeningEnded).toEqual({ transcriptMs: 180, firstTextMs: 180, firstSoundMs: null });
+
+    // A capture that was thrown away leaves no clock running for the next exchange.
+    voice.listenStart();
+    voice.listenStop();
+    voice.listenCancel();
+    advance(60_000);
+    worker().emit(heard("What is due this week?"));
+    await answered();
+    expect(voice.status().last?.sinceListeningEnded).toBeNull();
   });
 
   it("starts speaking each sentence as soon as the model has written it", async () => {
