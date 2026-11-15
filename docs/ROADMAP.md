@@ -207,26 +207,40 @@ not start until this is integrated, tested and documented.
   Python 3.12), packages installed, speech models downloaded.
 - First contact: Parakeet Unified, Parakeet TDT v2 and Kokoro all run on
   the Mac.
-- 86 automated tests pass.
+- 97 core tests and 19 voice-worker tests pass.
 
 **In progress / next, in order**
 
 1. Done: `qwen3.5:4b` runs through HELIOS's Ollama connection and calls
-   tools (first run in AI-VOICE-STACK.md). On the Mac this uses a current
-   Ollama run separately on port 11435, because the installed one (0.18.3)
-   is too old for this model. Still to do: a full conversation through the
-   HELIOS loop with the real model, and dates spelled out in the tool
-   descriptions (the model sent "tomorrow" as a deadline).
+   tools. On the Mac this uses a current Ollama run separately on port
+   11435, because the installed one (0.18.3) is too old for this model.
+   Still to do: a full conversation through the HELIOS loop with the real
+   model, and dates spelled out in the tool descriptions (the model sent
+   "tomorrow" as a deadline).
 2. Done: the "which model answered, and what has it cost" tool, and the
    detector that labels obvious keys and passwords as secret.
-3. Build the voice worker: protocol over standard input and output, mock
-   audio and engines for tests, then the real ones.
-4. The core's voice supervisor, routes for push-to-talk and cancel, speech
-   into the conversation, answers spoken sentence by sentence.
-5. Push-to-talk on the screen.
-6. Wake word plumbing; document what training "Hey Helios" takes.
-7. The audition tool and the benchmarks (one model per process).
-8. Finish AI-VOICE-STACK.md, update ARCHITECTURE.md, final report.
+3. Done: the voice worker (`apps/voice/helios_voice`): line protocol,
+   push-to-talk, Silero speech detection, Parakeet, Kokoro sentence by
+   sentence, stop within 50 ms, wake-word mode that is deaf while HELIOS
+   speaks, lazy model loading, recovery from missing devices. 14 tests with
+   scripted engines, 5 with the real models in memory (`uv run pytest` in
+   `apps/voice`).
+4. Done: the core's side (`apps/core/src/voice`): child-process transport,
+   supervisor with restarts, speech into a normal conversation turn,
+   answers spoken as they are written, voice routes, combined state.
+   Checked across the process boundary with the real Python worker.
+5. Next: push-to-talk and voice status on the screen
+   (`apps/web/src/components/Conversation.tsx`): hold a button to talk,
+   stop speaking, the "use the stronger model" option
+   (`reasoning: "strong"` on `/api/helios/message`).
+6. Then: the audition tool (write WAV files per voice, no playback at
+   night), benchmarks with one model per process (speech models, the local
+   model, both together), what training "Hey Helios" takes, and the
+   streaming Parakeet export for partial transcripts.
+7. Then: a first run with real audio devices. This needs the owner at the
+   Mac (microphone permission, and sound out loud).
+8. Finish AI-VOICE-STACK.md, update ARCHITECTURE.md, final report in the
+   format of the brief's section 11.
 
 **Not done / not verified**
 

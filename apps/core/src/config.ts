@@ -112,6 +112,38 @@ const configSchema = z.object({
         .prefault({}),
     })
     .prefault({}),
+  voice: z
+    .object({
+      /** Starts the voice worker (apps/voice) with the core. Off until speech is set up on this machine. */
+      enabled: z.boolean().default(false),
+      /** How to start the worker. Empty means the built-in way: uv, from apps/voice. */
+      command: z.array(z.string()).default([]),
+      /** Speech recogniser: the preferred model, or the fallback. */
+      stt: z.enum(["parakeet-unified", "parakeet-tdt-v2"]).default("parakeet-unified"),
+      /** The voice model file: "int8" is smaller and faster, "full" is full precision. */
+      tts: z.enum(["int8", "full"]).default("int8"),
+      voiceName: z.string().default("am_michael"),
+      speed: z.number().min(0.5).max(2).default(1),
+      /** Playback volume, from 0 to 1. */
+      gain: z.number().min(0).max(1).default(1),
+      /** Audio devices by name or number. Null means the system default. */
+      inputDevice: z.union([z.string(), z.number(), z.null()]).default(null),
+      outputDevice: z.union([z.string(), z.number(), z.null()]).default(null),
+      /** Speak HELIOS's answers to spoken questions. */
+      speakReplies: z.boolean().default(true),
+      /** After HELIOS stops speaking, ignore the microphone this long (milliseconds). */
+      guardMs: z.number().int().min(0).max(5000).default(500),
+      wake: z
+        .object({
+          enabled: z.boolean().default(false),
+          /** The wake model file in the models folder. "Hey Helios" needs its own trained model. */
+          model: z.string().default("hey_jarvis_v0.1.onnx"),
+          /** How sure the model has to be, from 0 to 1. Higher means fewer false alarms. */
+          threshold: z.number().min(0.05).max(0.99).default(0.5),
+        })
+        .prefault({}),
+    })
+    .prefault({}),
 });
 
 export type Config = z.infer<typeof configSchema>;

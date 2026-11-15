@@ -89,6 +89,9 @@ export class Helios {
   private readonly now: () => Date;
   private busy = false;
   private state: HeliosState = "idle";
+  /** What the turn loop is doing, and what the voice worker is doing. The screen sees the two combined. */
+  private turnState: HeliosState = "idle";
+  private voiceState: "idle" | "listening" | "transcribing" | "speaking" | "error" = "idle";
 
   constructor(deps: { instance: Instance; providers: ModelProvider[]; bus: EventBus; log: Logger; now?: () => Date }) {
     this.instance = deps.instance;
@@ -107,9 +110,29 @@ export class Helios {
   }
 
   private setState(state: HeliosState): void {
+    this.turnState = state;
+    this.publishState();
+  }
+
+  /** Called by the voice service when the worker starts or stops listening, transcribing or speaking. */
+  setVoiceState(state: "idle" | "listening" | "transcribing" | "speaking" | "error"): void {
+    this.voiceState = state;
+    this.publishState();
+  }
+
+  private publishState(): void {
+    // Hearing and speaking are what a person in the room perceives, so they
+    // win. Otherwise the turn loop's state shows, and the voice worker's
+    // quieter states only when nothing else is going on.
+    const state = this.voiceState === "listening" || this.voiceState === "speaking" ? this.voiceState : this.turnState !== "idle" ? this.turnState : this.voiceState;
     if (state === this.state) return;
     this.state = state;
     this.bus.publish({ type: "state", state });
+  }
+
+  /** True while a turn is being answered. */
+  get answering(): boolean {
+    return this.busy;
   }
 
   // ---------- conversations ----------
@@ -302,7 +325,8 @@ export class Helios {
       });
 
       if (route.kind === "none") {
-        note(route.reason);
+        // If a model was tried and failed, say that, not "nothing is set up".
+        note(failed.size > 0 ? "The model did not answer. Try again in a moment." : route.reason);
         break;
       }
       if (route.kind === "use" && route.provider.role === "standin" && failed.size > 0) {

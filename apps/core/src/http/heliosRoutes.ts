@@ -3,7 +3,11 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Helios } from "../ai/helios.ts";
 import { AppError } from "../errors.ts";
+import { saveConfig } from "../config.ts";
 import type { EventBus } from "../events.ts";
+import type { Instance } from "../instance.ts";
+import { audit } from "../security/audit.ts";
+import type { VoiceService, VoiceStatus } from "../voice/service.ts";
 
 const idParams = z.object({ id: z.string().regex(/^[\w-]{1,64}$/) });
 const messageSchema = z.object({
@@ -11,6 +15,22 @@ const messageSchema = z.object({
   conversationId: z.string().regex(/^[\w-]{1,64}$/).optional(),
 });
 const decisionSchema = z.object({ decision: z.enum(["approve", "deny"]) });
+const messageOptions = z.object({ reasoning: z.enum(["strong"]).optional() });
+const listenSchema = z.object({ action: z.enum(["start", "stop", "cancel"]) });
+const saySchema = z.object({ text: z.string().trim().min(1).max(300) });
+const voiceSettingsSchema = z
+  .object({
+    voiceName: z.string().regex(/^[a-z]{2}_[a-z]+$/),
+    speed: z.number().min(0.5).max(2),
+    gain: z.number().min(0).max(1),
+    inputDevice: z.union([z.string().max(200), z.number().int(), z.null()]),
+    outputDevice: z.union([z.string().max(200), z.number().int(), z.null()]),
+    speakReplies: z.boolean(),
+    wakeEnabled: z.boolean(),
+    wakeThreshold: z.number().min(0.05).max(0.99),
+  })
+  .partial();
+const VOICE_OFF: VoiceStatus = { enabled: false, worker: "off", state: "idle", wakeAvailable: false, wakeEnabled: false, devices: { inputs: [], outputs: [] }, lastError: null, restarts: 0, last: null };
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const result = schema.safeParse(value);
@@ -18,7 +38,11 @@ function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   return result.data;
 }
 
-export function registerHeliosRoutes(app: FastifyInstance, helios: Helios, bus: EventBus): void {
+export function registerHeliosRoutes(app: FastifyInstance, helios: Helios, bus: EventBus, voice: VoiceService | null, instance: Instance): void {
+  const requireVoice = (): VoiceService => {
+    if (!voice) throw new AppError(503, "Voice is switched off on this machine.");
+    return voice;
+  };
   app.get("/api/helios/status", async (): Promise<HeliosStatus> => helios.status());
 
   // The event stream: one long-lived response over which the core pushes
@@ -50,8 +74,52 @@ export function registerHeliosRoutes(app: FastifyInstance, helios: Helios, bus: 
   app.get("/api/conversations/:id/messages", async (request): Promise<ConversationMessage[]> => helios.messages(parse(idParams, request.params).id));
 
   app.post("/api/helios/message", async (request): Promise<TurnResult> => {
-    const input = parse(messageSchema, request.body);
-    return helios.handleMessage(input.text, { conversationId: input.conversationId, channel: "text" });
+    const input = parse(messageSchema.extend(messageOptions.shape), request.body);
+    return helios.handleMessage(input.text, { conversationId: input.conversationId, channel: "text", reasoning: input.reasoning });
+  });
+
+  // ---------- voice ----------
+  // Talking to HELIOS gives no extra rights: a spoken request takes the same
+  // path as a typed one, and these routes need the same login.
+
+  app.get("/api/voice/status", async (): Promise<VoiceStatus> => voice?.status() ?? VOICE_OFF);
+
+  // Push-to-talk: "start" when the button goes down, "stop" when it comes up.
+  app.post("/api/voice/listen", async (request) => {
+    const { action } = parse(listenSchema, request.body);
+    const service = requireVoice();
+    if (action === "start") service.listenStart();
+    else if (action === "stop") service.listenStop();
+    else service.listenCancel();
+    return { ok: true };
+  });
+
+  app.post("/api/voice/stop-speaking", async () => {
+    requireVoice().stopSpeaking();
+    return { ok: true };
+  });
+
+  app.post("/api/voice/say", async (request) => {
+    requireVoice().say(parse(saySchema, request.body).text);
+    return { ok: true };
+  });
+
+  app.post("/api/voice/restart", async () => {
+    requireVoice().restart();
+    return { ok: true };
+  });
+
+  app.put("/api/voice/settings", async (request) => {
+    const input = parse(voiceSettingsSchema, request.body);
+    const settings = instance.config.voice;
+    const { wakeEnabled, wakeThreshold, ...plain } = input;
+    Object.assign(settings, plain);
+    if (wakeEnabled !== undefined) settings.wake.enabled = wakeEnabled;
+    if (wakeThreshold !== undefined) settings.wake.threshold = wakeThreshold;
+    saveConfig(instance.paths, instance.config);
+    audit(instance.db, { actor: "owner", action: "voice.settings", detail: { changed: Object.keys(input) } });
+    voice?.configure();
+    return voice?.status() ?? VOICE_OFF;
   });
 
   app.get("/api/approvals", async (): Promise<Approval[]> => helios.pendingApprovals());

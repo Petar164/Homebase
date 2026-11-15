@@ -4,7 +4,9 @@ import { StandInProvider } from "./ai/standin.ts";
 import { buildServer } from "./http/server.ts";
 import { openInstance, StartupRefused } from "./instance.ts";
 import { runBackupCycle } from "./jobs/backups.ts";
-import { APP_VERSION, defaultDataDir, WEB_DIST_DIR } from "./paths.ts";
+import path from "node:path";
+import { APP_ROOT, APP_VERSION, defaultDataDir, WEB_DIST_DIR } from "./paths.ts";
+import { ProcessTransport } from "./voice/process.ts";
 import { ownerExists } from "./security/owner.ts";
 import { consoleLogger } from "./util.ts";
 
@@ -30,7 +32,14 @@ try {
     new ClaudeProvider({ role: "strong", model: ai.cloud.strongModel, effort: ai.cloud.effort.strong, maxOutputTokens: ai.cloud.maxOutputTokens.strong }),
     new ClaudeProvider({ role: "light", model: ai.cloud.lightModel, effort: ai.cloud.effort.light, maxOutputTokens: ai.cloud.maxOutputTokens.light }),
   ];
-  const { app, helios } = await buildServer({ instance, log, webDir: WEB_DIST_DIR, extraHosts, providers });
+  // The voice worker is a separate Python program, started and restarted by
+  // the core (see voice/service.ts). It is only started when voice is
+  // switched on in the settings.
+  const { voice: voiceSettings } = instance.config;
+  const voiceCommand = voiceSettings.command.length > 0 ? voiceSettings.command : ["uv", "run", "python", "-m", "helios_voice", "--stt", voiceSettings.stt, "--tts", voiceSettings.tts, "--wake", voiceSettings.wake.model];
+  const voiceTransport = () => new ProcessTransport({ command: voiceCommand, cwd: path.join(APP_ROOT, "apps", "voice"), env: { ...process.env, HOMEBASE_MODELS_DIR: process.env.HOMEBASE_MODELS_DIR ?? path.join(defaultDataDir(), "models") } });
+  const { app, helios, voice } = await buildServer({ instance, log, webDir: WEB_DIST_DIR, extraHosts, providers, voiceTransport });
+  log.info(voice ? "Voice is on: the voice worker is starting." : "Voice is off (set voice.enabled in config.json to turn it on).");
   await app.listen({ host, port });
 
   log.info(`Home Base ${APP_VERSION} is running at http://${host === "127.0.0.1" ? "localhost" : host}:${port}`);

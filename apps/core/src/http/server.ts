@@ -8,6 +8,8 @@ import { AppError } from "../errors.ts";
 import { EventBus } from "../events.ts";
 import type { Instance } from "../instance.ts";
 import { findSession, readCookie, SESSION_COOKIE, type Session } from "../security/sessions.ts";
+import type { VoiceTransport } from "../voice/protocol.ts";
+import { VoiceService } from "../voice/service.ts";
 import type { Logger } from "../util.ts";
 import { registerHeliosRoutes } from "./heliosRoutes.ts";
 import { registerRoutes } from "./routes.ts";
@@ -29,6 +31,8 @@ export type ServerContext = {
   extraHosts?: string[];
   /** The models HELIOS may use. Without any, a rule-based stand-in answers. */
   providers?: ModelProvider[];
+  /** How to start the voice worker. Without it, or with voice switched off, there is no voice. */
+  voiceTransport?: () => VoiceTransport;
 };
 
 declare module "fastify" {
@@ -54,7 +58,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Permissions-Policy": "camera=(), geolocation=(), payment=()",
 };
 
-export async function buildServer(context: ServerContext): Promise<{ app: FastifyInstance; routes: string[]; helios: Helios; bus: EventBus }> {
+export async function buildServer(context: ServerContext): Promise<{ app: FastifyInstance; routes: string[]; helios: Helios; bus: EventBus; voice: VoiceService | null }> {
   const { instance, log } = context;
   const { port } = instance.config.http;
   // forceCloseConnections: the event stream stays open for as long as the
@@ -115,8 +119,17 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
     return reply.code(500).send({ error: "Something went wrong on the server." });
   });
 
+  // Voice is optional. If the worker cannot start or keeps crashing, only
+  // voice is lost: everything else here is unaffected.
+  const voice =
+    context.voiceTransport && instance.config.voice.enabled
+      ? new VoiceService({ helios, bus, log, settings: instance.config.voice, createTransport: context.voiceTransport })
+      : null;
+  voice?.start();
+  app.addHook("onClose", async () => voice?.stop());
+
   registerRoutes(app, context);
-  registerHeliosRoutes(app, helios, bus);
+  registerHeliosRoutes(app, helios, bus, voice, instance);
 
   const webDir = context.webDir && existsSync(context.webDir) ? context.webDir : null;
   // Files are looked up on each request, so a rebuilt screen is served
@@ -132,7 +145,7 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
   });
 
   await app.ready();
-  return { app, routes, helios, bus };
+  return { app, routes, helios, bus, voice };
 }
 
 /** For routes that need step-up authentication (see docs/SECURITY.md). */
