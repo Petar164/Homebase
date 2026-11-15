@@ -2,6 +2,20 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { VoiceCommand, VoiceEvent, VoiceTransport } from "./protocol.ts";
 
+/** What the core holds for cloud models. The worker never calls one. */
+const WITHHELD_FROM_WORKER = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+
+/**
+ * The environment the voice worker is started with: the core's own, without
+ * the cloud key. The worker only hears and speaks, and speech libraries
+ * from other projects run inside it, so it is not handed a secret it has
+ * no use for. (Names are compared without regard to case, as Windows does.)
+ */
+export function workerEnv(env: NodeJS.ProcessEnv, modelsDir: string): NodeJS.ProcessEnv {
+  const kept = Object.entries(env).filter(([name]) => !WITHHELD_FROM_WORKER.includes(name.toUpperCase()));
+  return { ...Object.fromEntries(kept), HOMEBASE_MODELS_DIR: env.HOMEBASE_MODELS_DIR ?? modelsDir };
+}
+
 /**
  * The voice worker as a child process. It is a separate program on
  * purpose: audio drivers and speech models crash more than anything else

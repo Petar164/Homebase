@@ -6,7 +6,7 @@ import { openInstance, StartupRefused } from "./instance.ts";
 import { runBackupCycle } from "./jobs/backups.ts";
 import path from "node:path";
 import { APP_ROOT, APP_VERSION, defaultDataDir, WEB_DIST_DIR } from "./paths.ts";
-import { ProcessTransport } from "./voice/process.ts";
+import { ProcessTransport, workerEnv } from "./voice/process.ts";
 import { ownerExists } from "./security/owner.ts";
 import { consoleLogger } from "./util.ts";
 
@@ -37,7 +37,7 @@ try {
   // switched on in the settings.
   const { voice: voiceSettings } = instance.config;
   const voiceCommand = voiceSettings.command.length > 0 ? voiceSettings.command : ["uv", "run", "python", "-m", "helios_voice", "--stt", voiceSettings.stt, "--tts", voiceSettings.tts, "--wake", voiceSettings.wake.model];
-  const voiceTransport = () => new ProcessTransport({ command: voiceCommand, cwd: path.join(APP_ROOT, "apps", "voice"), env: { ...process.env, HOMEBASE_MODELS_DIR: process.env.HOMEBASE_MODELS_DIR ?? path.join(defaultDataDir(), "models") } });
+  const voiceTransport = () => new ProcessTransport({ command: voiceCommand, cwd: path.join(APP_ROOT, "apps", "voice"), env: workerEnv(process.env, path.join(defaultDataDir(), "models")) });
   const { app, helios, voice } = await buildServer({ instance, log, webDir: WEB_DIST_DIR, extraHosts, providers, voiceTransport });
   log.info(voice ? "Voice is on: the voice worker is starting." : "Voice is off (set voice.enabled in config.json to turn it on).");
   await app.listen({ host, port });

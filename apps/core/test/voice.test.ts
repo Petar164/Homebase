@@ -6,6 +6,7 @@ import { EventBus } from "../src/events.ts";
 import { buildServer } from "../src/http/server.ts";
 import { openInstance } from "../src/instance.ts";
 import { createSession, SESSION_COOKIE } from "../src/security/sessions.ts";
+import { workerEnv } from "../src/voice/process.ts";
 import type { VoiceCommand, VoiceEvent, VoiceTransport } from "../src/voice/protocol.ts";
 import { isOwnVoice, VoiceService } from "../src/voice/service.ts";
 import { silentLogger } from "../src/util.ts";
@@ -194,6 +195,14 @@ describe("controlling the worker", () => {
     expect(worker().sent.map((command) => command.type)).toEqual(["listen_start", "listen_stop", "stop_speaking", "speak", "speak_end"]);
     worker().alive = false;
     expect(() => voice.listenStart()).toThrow(/not running/);
+  });
+
+  it("starts the worker without the cloud key", () => {
+    // The worker hears and speaks; it never calls a cloud model.
+    const env = workerEnv({ PATH: "/usr/bin", HOMEBASE_PORT: "7127", ANTHROPIC_API_KEY: "test-placeholder", Anthropic_Auth_Token: "test-placeholder" }, "/data/models");
+    expect(env).toEqual({ PATH: "/usr/bin", HOMEBASE_PORT: "7127", HOMEBASE_MODELS_DIR: "/data/models" });
+    // A models folder that was chosen by hand is kept.
+    expect(workerEnv({ HOMEBASE_MODELS_DIR: "/elsewhere" }, "/data/models").HOMEBASE_MODELS_DIR).toBe("/elsewhere");
   });
 
   it("shows hearing and speaking on screen ahead of thinking", async () => {
