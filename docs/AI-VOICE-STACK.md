@@ -12,7 +12,7 @@ Status: work in progress on the branch `feature/ai-voice-stack`.
 
 | Job | Model | Runs through | State |
 |---|---|---|---|
-| Everyday reasoning, Home Base questions | `qwen3.5:4b` | Ollama, on this machine | Tag exists; needs Ollama newer than 0.18.3. First real run pending |
+| Everyday reasoning, Home Base questions | `qwen3.5:4b` | Ollama 0.40.16, on this machine | **Runs on the Mac**, through HELIOS's own connection, and calls tools correctly (see below). Needs Ollama 0.19 or newer |
 | Hard reasoning, planning, analysis | `claude-sonnet-5-5` | Anthropic API | Connection written and tested against a fake. No real call yet: there is no API key |
 | Extraction, classification, summaries, background work | `claude-haiku-5-5` | Anthropic API | Same |
 | Speech to text | NVIDIA Parakeet Unified English 0.6B, int8 | sherpa-onnx 2.0.1, on the CPU | **Runs on the Mac.** Transcribed a synthesised test sentence exactly |
@@ -62,6 +62,32 @@ come with the benchmark step. They say nothing about the laptop.
 Male American Kokoro voices available for the audition: `am_adam`,
 `am_echo`, `am_eric`, `am_fenrir`, `am_liam`, `am_michael`, `am_onyx`,
 `am_puck`, `am_santa`.
+
+## The local model, first real run (Mac, one run)
+
+`qwen3.5:4b` as Ollama delivers it: 4.5 billion parameters, quantisation
+`nvfp4`, 4.0 GB on disk, Apache 2.0 licence, supports tools, vision and
+optional thinking (switched off here for speed). Loaded with an 8,192-token
+context it took 4.8 GB, entirely on the GPU. On the Mac, Ollama runs it
+with Apple's MLX; on the laptop it will use a different runner, so memory
+and speed there are unknown until measured.
+
+Six requests were sent through `OllamaProvider`, the same code HELIOS uses,
+with HELIOS's real tool list (about 1,020 tokens of instructions and tools):
+
+| Request | What the model did | Time |
+|---|---|---|
+| "What is due this week?" | asked for `get_overview` | 3.0 s (includes loading the model) |
+| "Add a task to call the dentist tomorrow" | asked for `add_task`, title and area right, but `due: "tomorrow"` instead of a date | 0.75 s |
+| "What did I say about the darkroom budget?" | asked for `search_conversations` with "darkroom budget" | 0.34 s |
+| "How much did the shop make in 2026-11?" | asked for `get_money_summary` for 2026-11 | 0.28 s |
+| "Which model answered that?" | asked for `get_answer_info` | 0.27 s |
+| "Say hello in five words." | answered in text, no tool (nine words, not five) | 0.17 s |
+
+Five of five tool requests chose the right tool. One had an input the core
+rejects (a relative date); the core's validation catches that and the model
+is told, which is the design. Six requests are an indication, not a
+reliability figure: a proper test set is part of the benchmark step.
 
 ## Where models come from and where they live
 
@@ -126,8 +152,8 @@ are set up separately at console.anthropic.com.
 
 ## Still to build in this work
 
-- A real run of `qwen3.5:4b`: quantisation, memory, speed, and whether it
-  calls tools reliably.
+- A proper tool-calling test set for `qwen3.5:4b`, run through the whole
+  HELIOS loop, and clearer date wording in the tool descriptions.
 - The voice worker (`apps/voice`): microphone, Silero VAD, Parakeet,
   Kokoro, push-to-talk, cancelling speech, device selection, recovery.
 - The core's side: starting and supervising the worker, speech into the

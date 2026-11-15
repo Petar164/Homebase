@@ -207,15 +207,17 @@ not start until this is integrated, tested and documented.
   Python 3.12), packages installed, speech models downloaded.
 - First contact: Parakeet Unified, Parakeet TDT v2 and Kokoro all run on
   the Mac.
-- 84 automated tests pass.
+- 86 automated tests pass.
 
 **In progress / next, in order**
 
-1. Run `qwen3.5:4b` for real and fix the Ollama connection against it
-   (quantisation, memory, speed, tool calls). On the Mac this uses a
-   current Ollama run separately on port 11435, because the installed one
-   (0.18.3) is too old for this model.
-2. Add the "which model answered, and what has it cost" tool, and a
+1. Done: `qwen3.5:4b` runs through HELIOS's Ollama connection and calls
+   tools (first run in AI-VOICE-STACK.md). On the Mac this uses a current
+   Ollama run separately on port 11435, because the installed one (0.18.3)
+   is too old for this model. Still to do: a full conversation through the
+   HELIOS loop with the real model, and dates spelled out in the tool
+   descriptions (the model sent "tomorrow" as a deadline).
+2. Done: the "which model answered, and what has it cost" tool, and the
    detector that labels obvious keys and passwords as secret.
 3. Build the voice worker: protocol over standard input and output, mock
    audio and engines for tests, then the real ones.
