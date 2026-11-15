@@ -9,7 +9,12 @@ import { CURRENCIES } from "./types.ts";
 const day = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-01-31.")
-  .refine((s) => !Number.isNaN(Date.parse(`${s}T00:00:00Z`)), "That date does not exist.");
+  // JavaScript quietly turns 31 February into 3 March, so "is it a date?" is
+  // not enough: the date must also come back out unchanged.
+  .refine((s) => {
+    const parsed = new Date(`${s}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === s;
+  }, "That date does not exist.");
 const optionalDay = z.union([day, z.literal("")]);
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 09:30.");
 const optionalTime = z.union([time, z.literal("")]);

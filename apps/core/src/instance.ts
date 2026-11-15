@@ -15,10 +15,13 @@ import { type Logger, nowIso, silentLogger, writeFileAtomic } from "./util.ts";
 /** Thrown when starting would risk data. `help` lists what the owner can do. */
 export class StartupRefused extends Error {
   readonly help: string[];
-  constructor(message: string, help: string[] = []) {
+  /** "running" when another core holds the data folder; "data" for everything else. */
+  readonly code: "running" | "data";
+  constructor(message: string, help: string[] = [], code: "running" | "data" = "data") {
     super(message);
     this.name = "StartupRefused";
     this.help = help;
+    this.code = code;
   }
 }
 
@@ -90,7 +93,7 @@ function acquireLock(paths: DataPaths): () => void {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     const holder = Number(readFileSync(paths.lockFile, "utf8"));
     if (holder && holder !== process.pid && isAlive(holder)) {
-      throw new StartupRefused(`Home Base is already running on this data folder (process ${holder}).`, ["Stop it first."]);
+      throw new StartupRefused(`Home Base is already running on this data folder (process ${holder}).`, ["Stop it first."], "running");
     }
     writeFileSync(paths.lockFile, mine); // the previous holder is gone
   }
