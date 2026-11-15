@@ -187,6 +187,10 @@ laptop.
 This section is rewritten at the end of every work session so the next one
 can start without context.
 
+The full handoff, with the git state, test results, open issues and the
+exact next steps, is in [`PROJECT_STATE.md`](../PROJECT_STATE.md). Read that
+file first.
+
 **Last updated:** 15 November 2026, early morning
 
 **Current work: the AI and voice stack**, on the branch
