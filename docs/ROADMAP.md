@@ -8,7 +8,7 @@ committed, so work can stop after any step without leaving a broken state.
 
 | Phase | State |
 |---|---|
-| 1. Foundation | In progress |
+| 1. Foundation | Built and tested on a Mac. Not yet run on the Windows laptop |
 | 2. HELIOS core | Not started |
 | 3. Memory and second brain | Not started |
 | 4. Neural interface | Not started |
@@ -23,27 +23,39 @@ this file, under "Where the work stands".
 Goal: a core that keeps data safe across updates, with login and the first
 Home Base screen.
 
-Done when:
+Done when (each line has an automated test unless it says otherwise):
 
-- [ ] A first start creates the data folder outside the app folder. A
+- [x] A first start creates the data folder outside the app folder. A
       restart finds the same data.
-- [ ] Adding a migration and restarting takes a snapshot first, and existing
+- [x] Adding a migration and restarting takes a snapshot first, and existing
       rows are still there afterwards.
-- [ ] A failing migration leaves the database unchanged.
-- [ ] Code older than the database refuses to start.
-- [ ] A data folder with a missing database refuses to start blank.
-- [ ] Snapshot, verify and restore round-trip the database and files
+- [x] A failing migration leaves the database unchanged.
+- [x] Code older than the database refuses to start.
+- [x] A data folder with a missing database refuses to start blank.
+- [x] Snapshot, verify and restore round-trip the database and files
       exactly, and a restore snapshots the current state first.
-- [ ] Snapshots mirror to a second folder (the external drive) and can
+- [x] Snapshots mirror to a second folder (the external drive) and can
       restore a machine that lost its data folder.
-- [ ] Snapshots run on a schedule and old ones are thinned.
-- [ ] Only the owner can log in; failed attempts are limited; every data
+- [x] Snapshots run on a schedule and old ones are thinned.
+- [x] Only the owner can log in; failed attempts are limited; every data
       route rejects requests without a session.
-- [ ] The audit log detects an edited or removed entry.
-- [ ] The existing Home Base data (tasks, calendar, training, sales, ledger,
+- [x] The audit log detects an edited or removed entry.
+- [x] The existing Home Base data (tasks, calendar, training, sales, ledger,
       settings) imports from an export of the Claude artifact version.
-- [ ] The TV screen shows time, date, today's focus, tasks, deadlines, the
-      week and system status from real data.
+      Checked by hand against a real export as well.
+- [x] The screen shows time, date, today's focus, tasks, the week and system
+      status from real data. Checked by hand in a browser.
+- [ ] All of the above also holds on the Windows laptop. Not run there yet.
+
+Left over from this phase, to slot in where they are needed:
+
+- The other Home Base screens (tasks by area, training log, sales and
+  taxes, analytics). Their records are stored and imported; only the main
+  screen and tasks have an API and a screen so far.
+- Weather on the main screen (needs a data source; phase 4).
+- An "export everything" button in the Claude artifact, so a fresh export
+  can be made without help.
+- Two newer artifact settings (`chargesVat`, `taxRate`) are not imported yet.
 
 ## Phase 2: HELIOS core
 
@@ -163,16 +175,21 @@ can start without context.
 
 **Done**
 
-- Repository audit. Design documents written.
+- Repository audit and design documents.
+- Phase 1 on a Mac: the core (data folder, migrations, snapshots, mirrors,
+  restore, login, audit log, tasks and overview API, import), the
+  `homebase` command and the first screen. 45 automated tests pass.
 
-**In progress**
+**Not done / not verified**
 
-- Phase 1: restructuring the repository into `apps/core`, `apps/web` and
-  `packages/shared`.
+- Nothing has run on the Windows laptop.
+- No real Home Base exists yet. The owner account, the first real import
+  and the external-drive mirror are set up on the machine that will run it.
 
 **Next**
 
-1. Core: data folder, database, migrations, snapshots, restore, with tests.
-2. Core: login, sessions, audit log, with tests.
-3. Core: Home Base records, import from the artifact export.
-4. Web: login and the TV screen.
+1. Phase 2, in this order: the model interface with a scripted fake model,
+   conversations and messages in the database, a text conversation with
+   HELIOS on the screen, the state stream to the brain, the router with the
+   cloud approval gate and cost cap, then the voice worker.
+2. A setup session on the Windows laptop.

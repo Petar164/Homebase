@@ -19,6 +19,9 @@ hash and metadata.
 
 ## System and safety (phase 1)
 
+Snapshots are not a table: the backup store on disk is their record, so it
+stays readable when the database is the thing that was lost.
+
 | Table | Purpose | Key fields |
 |---|---|---|
 | `schema_migrations` | Which migrations ran | `version`, `name`, `checksum`, `applied_at`, `app_version` |
@@ -29,8 +32,7 @@ hash and metadata.
 | `login_attempts` | Rate limiting and lockout | `key`, `succeeded`, `created_at` |
 | `audit_log` | Append-only, hash-chained record of actions | `seq`, `at`, `actor`, `action`, `target`, `detail`, `prev_hash`, `hash` |
 | `record_revisions` | Earlier versions of edited rows | `table_name`, `row_id`, `data`, `changed_at`, `actor` |
-| `backups` | Index of snapshots (the backup store itself is the source of truth) | `id`, `kind`, `created_at`, `schema_version`, `bytes`, `verified_at`, `mirrors` |
-| `jobs` | Scheduler state that must survive restarts | `name`, `last_run_at`, `last_status`, `next_due_at` |
+| `jobs` | Scheduler state that must survive restarts | `name`, `last_run_at`, `last_status`, `last_error` |
 
 ## Home Base records (phase 1)
 

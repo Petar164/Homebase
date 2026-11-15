@@ -188,14 +188,20 @@ async function main(args: string[]): Promise<void> {
         if (error instanceof StartupRefused && error.code === "running") fail(error.message);
         console.log(`The current data cannot be opened (${(error as Error).message}). It will be moved aside, not deleted.`);
       }
+      let result: Awaited<ReturnType<typeof restoreSnapshot>>;
       try {
-        const result = await restoreSnapshot({ paths, store, snapshotId: id, current });
-        console.log("Restored.");
-        if (result.preRestoreSnapshot) console.log(`  Snapshot of what was replaced: ${result.preRestoreSnapshot}`);
-        if (result.replacedDir) console.log(`  Replaced folders kept in:      ${result.replacedDir}`);
+        result = await restoreSnapshot({ paths, store, snapshotId: id, current });
       } finally {
         current?.close();
       }
+      console.log("Restored.");
+      if (result.preRestoreSnapshot) console.log(`  Snapshot of what was replaced: ${result.preRestoreSnapshot}`);
+      if (result.replacedDir) console.log(`  Replaced folders kept in:      ${result.replacedDir}`);
+      // The restored database does not know it was restored. Say so in its
+      // audit log, so the gap in the record is explained rather than silent.
+      await withInstance(async (instance) => {
+        audit(instance.db, { actor: "cli", action: "backup.restore", target: id, detail: { preRestoreSnapshot: result.preRestoreSnapshot } });
+      });
       return;
     }
 
