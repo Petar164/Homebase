@@ -100,6 +100,11 @@ Done when:
 - [ ] Speech round trip on the laptop: under 3 seconds from end of speech to
       start of reply for a local answer.
 
+How the open lines are checked on the laptop, with which tool and against
+which mark, and what was found, is in
+[PHASE-2-ACCEPTANCE.md](PHASE-2-ACCEPTANCE.md). Nothing there has been run
+yet.
+
 ## Phase 3: Memory and second brain
 
 Goal: HELIOS remembers, and can find what it remembers.
@@ -196,8 +201,12 @@ file first.
 **Current work: the AI and voice stack.** It is merged into `main` and
 pushed (15 November 2026). The brief and what is verified so far are in
 [AI-VOICE-STACK.md](AI-VOICE-STACK.md). Next is the first session on the
-Windows laptop ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)). Phase 3 does not start
-until this is integrated, tested and documented, and the owner says so.
+Windows laptop ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)), ending in the
+acceptance checks of [PHASE-2-ACCEPTANCE.md](PHASE-2-ACCEPTANCE.md): the
+local model, the microphone and speakers, push-to-talk, stopping speech,
+recognition from two metres, HELIOS not answering itself, and the time from
+the end of speech to the first sound. Phase 3 does not start until this is
+integrated, tested and documented, and the owner says so.
 
 **Done**
 
@@ -216,7 +225,13 @@ until this is integrated, tested and documented, and the owner says so.
   (`apps/voice/helios_voice/models.json`), a command that downloads and
   verifies them, and a check of each file before the worker loads it.
 - The voice worker is started without the cloud key.
-- 98 core tests and 54 voice-worker tests pass (`npm test`, and `uv run pytest` in `apps/voice`).
+- For the acceptance checks: the core times every spoken exchange from the
+  release of the talk button to the first sound; `helios_voice.check`
+  measures a real microphone and real speakers; the benchmark measures the
+  local model at more than one context size; and the checks, their marks
+  (confirmed by the owner on 15 November 2026) and an empty results table
+  are written down.
+- 100 core tests and 75 voice-worker tests pass (`npm test`, and `uv run pytest` in `apps/voice`).
 
 **In progress / next, in order**
 
@@ -230,7 +245,8 @@ until this is integrated, tested and documented, and the owner says so.
    detector that labels obvious keys and passwords as secret.
 3. Done: the voice worker (`apps/voice/helios_voice`): line protocol,
    push-to-talk, Silero speech detection, Parakeet, Kokoro sentence by
-   sentence, stop within 50 ms, wake-word mode that is deaf while HELIOS
+   sentence, stop within 50 ms (as far as the worker goes: sound already
+   handed to the speakers still plays out), wake-word mode that is deaf while HELIOS
    speaks, lazy model loading, recovery from missing devices. 14 tests with
    scripted engines, 5 with the real models in memory (`uv run pytest` in
    `apps/voice`).
@@ -257,13 +273,23 @@ until this is integrated, tested and documented, and the owner says so.
    scratch folder.
 10. Open: wiring the streaming export in for words-as-you-speak, protected
     storage for the API key.
+11. Done on the Mac, to be used on the laptop: the preparation for the
+    acceptance checks. A timing record in the core for each spoken
+    exchange; `uv run python -m helios_voice.check` for the microphone, the
+    speakers, reading aloud, HELIOS's own voice in the room and the summary
+    of the latency figures; `--context` for the benchmark; and
+    [PHASE-2-ACCEPTANCE.md](PHASE-2-ACCEPTANCE.md), with the marks the
+    owner confirmed. The `check` commands were tested in a simulated room.
+    Only the listing of devices has run on real hardware.
 
 **Not done / not verified**
 
 - Nothing has run on the Windows laptop.
 - No Claude call has been made: no API key exists. The local model works.
 - No microphone or speaker has been used yet. Speech tests fed synthesised
-  audio straight to the recogniser.
+  audio straight to the recogniser, and the new device checks ran in a
+  simulated room.
+- How long HELIOS takes to fall silent on real speakers when told to stop.
 
 **Practical notes for the next session**
 

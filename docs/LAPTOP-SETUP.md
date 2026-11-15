@@ -69,9 +69,8 @@ These change Windows settings, so each one is the owner's decision.
 
 ## 7. Speech (the AI and voice stack)
 
-The order of the measurements that follow these steps is in
-[AI-VOICE-STACK.md](AI-VOICE-STACK.md), under "Pending on the Windows
-laptop".
+These steps install speech. What is then measured, and against which
+marks, is in section 8.
 
 | Step | Check |
 |---|---|
@@ -82,8 +81,26 @@ laptop".
 | `uv run pytest` again | All tests pass and none are skipped |
 | In `config.json` in the data folder set `"voice": { "enabled": true }` and restart the core | A "Hold to talk" button appears on the screen |
 
-## 8. Report back
+## 8. Acceptance checks before Phase 3
+
+[PHASE-2-ACCEPTANCE.md](PHASE-2-ACCEPTANCE.md) lists them, with the tool
+and the mark for each: the local model, the microphone and speakers,
+push-to-talk, stopping speech, recognition from two metres, HELIOS not
+answering itself, and the time from the end of speech to the first sound.
+
+| Step | Check |
+|---|---|
+| Take a snapshot of the real Home Base and stop its core, as that page says | The snapshot verifies; port 7117 no longer answers |
+| Set up the scratch copy on port 7127 described there | Its screen opens and shows the imported records and a "Hold to talk" button |
+| Run the checks in the order of that page. The ones with a microphone or speakers need the owner in the room | Every line of its results table says "Passed" or "Failed" with its figures, not "Not run" |
+| Write each failure and its fix in that page's table | Nothing was fixed without a line there |
+| Delete the scratch copy and start the real core again | http://localhost:7117 answers; `%TEMP%\hb-accept` is gone |
+
+A check is "Passed" only when it ran on this laptop and met its mark.
+
+## 9. Report back
 
 Write down what failed and what was changed, and update "Where the work
-stands" in [ROADMAP.md](ROADMAP.md). Risks 1, 2, 5 and 8 in the roadmap are
-settled by this session.
+stands" in [ROADMAP.md](ROADMAP.md) and [`PROJECT_STATE.md`](../PROJECT_STATE.md).
+Risks 1, 2, 3, 5 and 8 in the roadmap are settled by this session.
+Phase 3 still waits for the owner's word.

@@ -5,23 +5,57 @@ session needs to continue without the earlier conversation. Rewrite it at the
 end of every session. `docs/ROADMAP.md` holds the plan; this file holds where
 the work actually is.
 
-**Last updated:** 15 November 2026, late evening
+**Last updated:** 15 November 2026, near midnight
 
 ## 1. Snapshot
 
 | | |
 |---|---|
-| Current work | The AI and voice stack, built between Phase 2 and Phase 3 |
-| State | Built, tested and documented on the Mac. Merged into `main` and pushed on 15 November 2026, with the owner's yes. **Next: the first session on the Windows laptop** |
-| Branch | `main`, the same as `origin/main`. Nothing is uncommitted. The old branch `feature/ai-voice-stack` exists on the Mac only and holds nothing more |
-| Tests | 98 of 98 in the core, 54 of 54 in the voice worker, type check clean, all on the Mac |
-| Next phase | Phase 3 (memory and second brain). **Do not start it without the owner's word** |
+| Current work | The acceptance checks between Phase 2 and Phase 3, on the Windows laptop |
+| State | The AI and voice stack is built, tested and documented on the Mac. The preparation for the acceptance checks (measuring tools, the checklist with the marks the owner confirmed, an empty results table) is done on the Mac too. Both are on `main` and pushed. **No check has been run on the laptop** |
+| Branch | `main`, the same as `origin/main`. Nothing is uncommitted. Two old branches exist on the Mac only and hold nothing more: `feature/ai-voice-stack` and `laptop-acceptance` |
+| Tests | 100 of 100 in the core, 75 of 75 in the voice worker, type check clean, all on the Mac |
+| Next phase | Phase 3 (memory and second brain). **Do not start it until the owner explicitly authorises it** |
 
 Three things are not verified anywhere: a real microphone and speakers, a
 real Claude call, and everything on the Windows laptop.
 
-A session on the laptop starts with `docs/LAPTOP-SETUP.md`. This file was
-written on the Mac: every result in it is a Mac result.
+A session on the laptop starts with `docs/LAPTOP-SETUP.md` and ends with
+`docs/PHASE-2-ACCEPTANCE.md`. This file was written on the Mac: every
+result in it is a Mac result.
+
+### The owner's instruction for this stage (15 November 2026)
+
+- Finish the Phase 2-to-3 acceptance checks before Phase 3 begins. Do not
+  begin Phase 3 until the owner explicitly authorises it.
+- Validate on the Windows 11 laptop, following `docs/LAPTOP-SETUP.md`.
+- Preserve all existing data. Make no unnecessary architectural changes.
+- Priorities: actual local-model performance; the microphone and the
+  speakers; push-to-talk; interrupting speech; recognition at about two
+  metres; prevention of audio feedback; time from the end of speech to the
+  first audio.
+- Keep the real Anthropic API verification on the outstanding checklist.
+- Record actual measurements, failures and fixes in the project
+  documentation. Do not claim a test has passed until it has run on the
+  target hardware. Do not mark any hardware acceptance test as passed
+  until it has actually run on the Windows laptop.
+- Do not begin Phase 3, do not deploy, and do not modify the real Home
+  Base database.
+- Pushes are made normally, after the audit. No force pushes. The pushes
+  made so far are fine and are not to be rolled back.
+
+The owner approved the acceptance marks the same day, with two changes:
+
+- The local model fully on the GPU at 8,192 tokens is the preferred
+  target, not an absolute requirement. Benchmark 8,192 and 4,096 tokens,
+  record the memory used on the GPU and on the CPU side, and report any
+  fallback.
+- For the time to the first sound, measure the median, the 90th percentile
+  and the slowest of ten runs. The target for the median stays under 3
+  seconds.
+- Kept as proposed: no application failure in ten spoken questions; the
+  physical audio stops within 300 ms; no more than 10 of 94 words wrong at
+  about two metres.
 
 ## 2. What this project is
 
@@ -131,7 +165,15 @@ Code: `apps/voice/helios_voice` and `apps/core/src/voice`.
   and a wake word are not authentication.
 - Push-to-talk is the way in: hold the button on the screen or the space bar.
 - Answers are spoken sentence by sentence while they are still being
-  written. "Stop" cuts speech within 50 ms.
+  written. On "stop" the worker stops handing sound to the speakers within
+  50 ms. Sound it already handed over is still played out (section 9,
+  point 15); how long that lasts on real speakers is not measured.
+- Every spoken exchange is timed on the core's clock from the moment
+  listening ended (the talk button released, or the end of speech after
+  the wake word): to the transcript, to the model's first sentence, and to
+  that sentence being handed to the speakers. The figures are in the core's
+  log, one line per exchange and durations only, and in the voice status
+  under `last.sinceListeningEnded`.
 - No echo cancellation. The worker ignores the microphone while it speaks
   (half duplex, with a guard of 500 ms), and the core drops a wake-word
   transcript that matches what HELIOS just said.
@@ -173,16 +215,59 @@ Code: `apps/voice/helios_voice/models.py` and `models.json` next to it.
 - A file the list does not know, such as a wake model trained later, is
   loaded unchecked.
 
+### Acceptance checks and their tools
+
+The checks, the mark for each and the results table: `docs/PHASE-2-ACCEPTANCE.md`.
+Every result there says "Not run". The marks are the ones the owner
+confirmed (section 1).
+
+- `apps/voice/helios_voice/check.py`, run as
+  `uv run python -m helios_voice.check <name>`: `devices`, `speaker`,
+  `mic`, `read` (ten sentences read aloud, words wrong counted) and `echo`
+  (HELIOS speaks while the microphone listens: how late and how loud its
+  voice returns, how long until the room is quiet, and with `--stop-after`
+  how long a stop takes). They use the worker's own audio class, outside
+  any conversation. Each waits for Enter before it listens or makes sound.
+  `--out FILE` keeps the numbers: no words, no device names.
+- `check turns --log FILE` touches no device. It reads the core's log (the
+  core is started with its output kept in a file) and gives the middle
+  value, the 90th percentile and the slowest of the last ten spoken
+  exchanges, with `--speaker-delay` added to the first sound. A test keeps
+  the line it reads in step with the line the core writes.
+- **What is proven about them:** the arithmetic and the order of steps,
+  in a simulated room (`apps/voice/tests/test_check.py`), and with the real
+  voice, speech detector and recogniser inside that simulated room. Only
+  `devices` has run on real hardware (the Mac). **No other check has met a
+  real microphone or speaker.** Expect first-run problems on the laptop.
+- The benchmark takes `--context 8192 4096` and measures the local model
+  at each size, unloading it in between. For each it says how much of the
+  model is on the GPU and how much in ordinary memory.
+- The scratch copy for the checks is described on the acceptance page:
+  another data folder on port 7127 with the real export imported and
+  `HOMEBASE_MODELS_DIR` pointing at the installed models, so spoken test
+  questions stay out of the real history.
+
 ## 6. Git state
 
 Everything is on `main`, and `main` is pushed: `origin/main` is the same
 commit. Nothing is uncommitted. The history is one line, without merge
-commits.
+commits. Every push was a normal one, made after the audit in section 13
+and on the owner's yes.
 
-The AI and voice stack is the last 13 commits. It was built on the branch
-`feature/ai-voice-stack` and came into `main` on 15 November 2026 by moving
-`main` forward to it. The push was made after the audit in section 13. The
-branch still exists on the Mac only. It was never pushed and can be deleted.
+The preparation for the acceptance checks is the last three commits. It
+was made on the branch `laptop-acceptance` and came into `main` on
+15 November 2026 by moving `main` forward to it.
+
+| Commit | What |
+|---|---|
+| `39d2994` | Time each spoken exchange from the release of the talk button to the first sound |
+| `eb9c96c` | Add real microphone and speaker checks; benchmark the local model at several context sizes |
+| the newest | Add the acceptance checks before Phase 3, with the marks the owner confirmed. This file is part of that commit, so its number is not written here; `git log -1` shows it |
+
+The AI and voice stack is the 13 commits before those. It was built on the
+branch `feature/ai-voice-stack` and came into `main` the same day, the same
+way. Both branches still exist on the Mac only. They were never pushed and
+can be deleted.
 
 | Commit | What |
 |---|---|
@@ -198,7 +283,7 @@ branch still exists on the Mac only. It was never pushed and can be deleted.
 | `7416257` | Do not let a pending microphone permission freeze the voice worker |
 | `b077654` | Add PROJECT_STATE.md: the handoff for the next session |
 | `97a2b3f` | Start the voice worker without the cloud key |
-| the newest | Pin the speech models: a list with checksums, a download command and a check before loading. This file is part of that commit, so its number is not written here; `git log -1` shows it |
+| `9cc1656` | Pin the speech models by checksum: a list, a download command, a check before loading |
 
 Before these, `main` held 15 commits, up to `46a8d33`.
 
@@ -208,14 +293,26 @@ Run on 15 November 2026 on the Mac, on the code that was pushed:
 
 | Command | Result |
 |---|---|
-| `npm test` | 98 passed, 0 failed (7 files) |
+| `npm test` | 100 passed, 0 failed (7 files) |
 | `npm run typecheck` | clean |
-| `cd apps/voice && uv run pytest` | 54 passed, 0 failed |
+| `cd apps/voice && uv run pytest` | 75 passed, 0 failed |
 
-Of the 54 voice tests, 6 use the real speech models and are skipped on a
+The AI and voice stack itself (`9cc1656`) had 98 and 54; both passed on
+it. The preparation for the acceptance checks added 2 in the core (the
+timing of a spoken exchange) and 21 in the voice worker (19 for the device
+checks and the summary of the latency figures, 2 for the benchmark).
+
+Of the 75 voice tests, 7 use the real speech models and are skipped on a
 machine that does not have them, and 1 needs the optional `openwakeword`
 package. Each of the ten acceptance points of the AI and voice brief has an
 automated test; the table is in `docs/AI-VOICE-STACK.md`.
+
+The tests of the device checks (`apps/voice/tests/test_check.py`) run in a
+simulated room. They do not open a microphone or play a sound, and they
+prove nothing about a real device. Each piece of the new logic (19 in all,
+across the timing, the device checks, the summary and the benchmark) was
+switched off or changed once. Three changes went unnoticed at first; the
+tests were tightened until every one of the 19 made a test fail.
 
 The 34 tests of the model files (`apps/voice/tests/test_models.py`) use a
 web server on the machine itself and never reach the internet. Each
@@ -241,7 +338,15 @@ with invented records and voice switched on. The screen, a typed question
 answered by the stand-in, and the same exchange after a restart were
 checked in a browser. The real voice worker started and stayed idle, and it
 listed the Mac's microphone and speakers. The talk button was not pressed,
-so no microphone was opened and no sound was played.
+so no microphone was opened and no sound was played. On that copy, after
+the push, the Phase 2 flows were tried in the browser with the stand-in:
+a request to add a task asked for approval and ran once after the yes,
+memory search found the earlier conversation, and the money summary and
+the sales screen matched the invented records.
+
+And `uv run python -m helios_voice.check devices` on the Mac's real sound
+system: it listed one microphone and two speakers and their expected
+delays. It opens nothing and makes no sound.
 
 ## 8. Measurements
 
@@ -269,6 +374,8 @@ with it): Parakeet Unified 0.66 s and 0.88 s, Kokoro int8 0.16 s and
 
 **Never report these as Windows figures, and never invent a figure.** Time
 from end of speech to first sound through real devices is not measured.
+The core now records it for every spoken exchange (section 5), so the
+laptop session can read it from the log; no exchange has been spoken yet.
 
 ## 9. Unresolved issues
 
@@ -313,6 +420,23 @@ from end of speech to first sound through real devices is not measured.
 14. **The release pages can change.** Their owners can replace a file under
     the same name. The download then fails on purpose, and the list has to
     be updated by hand after looking at the new file.
+15. **A stop may not be heard as immediate.** Found by reading the sound
+    library, not by measuring: `play` in `apps/voice/helios_voice/audio.py`
+    leaves its `with` block when told to stop, and the library then calls
+    `stop()`, which waits until the sound already handed over has played.
+    Earlier documents said "speech stops within 50 ms"; that is true of the
+    worker's own step only. Check D1 measures it on the laptop. If it is
+    too slow, calling `abort()` on an interrupted sentence is the first
+    thing to try. Not changed now, because it could not be tried on real
+    speakers.
+16. **The device checks have not met a real device.** Except for `devices`,
+    `helios_voice.check` has only run in a simulated room. Its timing rests
+    on one assumption that only real hardware can confirm: that a piece of
+    microphone sound arrives when its last sample was heard.
+17. **The microphone array of a laptop may cancel echo by itself.** Windows
+    sound drivers often do. Check F1 could then report that the microphone
+    did not hear the speakers at all. That would be a finding to write
+    down, not a fault of the check.
 
 ## 10. Decisions already made
 
@@ -335,6 +459,10 @@ from end of speech to first sound through real devices is not measured.
 - The owner approved the merge and the push of the AI and voice stack on
   15 November 2026, after seeing the app run on the Mac with invented
   records, so that the laptop can get the code.
+- The owner approved the push of the preparation for the acceptance checks
+  the same day, and confirmed the marks of those checks with two changes
+  (section 1). The marks are fixed: they are not changed after seeing the
+  laptop's numbers.
 
 ## 11. Decisions waiting on the owner
 
@@ -363,41 +491,43 @@ from end of speech to first sound through real devices is not measured.
 
 ## 12. Exact next steps
 
-The work was pushed so that the Windows laptop can get it. The laptop is
-next. Steps 2 to 5 each need the owner, and each can be done on the laptop
-instead of the Mac.
+In this order. Everything the laptop needs is on GitHub. Steps 2 to 6 need
+the owner in the room or a decision of the owner.
 
-1. **Windows laptop.** Clone the repository from GitHub and follow
-   `docs/LAPTOP-SETUP.md` from the top (section 7 there is speech). The
-   owner brings the export file over separately; it never goes through the
-   repository. Run all tests, then
-   `uv run python -m helios_voice.bench --out results.json --ollama http://127.0.0.1:11434`
-   in `apps/voice`, and save the result under `docs/benchmarks/`. Check video
-   memory with the local model loaded, the microphone at two metres with TV
-   sound, and killing Ollama or the worker during use.
-2. **Local model.** On the laptop this is section 6 of the setup plan. On
-   the Mac it needs Ollama updated first: then `ollama pull qwen3.5:4b`,
-   start the core against a scratch data folder, repeat the five-turn
-   conversation.
-3. **One real Claude call.** Put `ANTHROPIC_API_KEY` in `.env` (ignored by
-   git). Send one request that routes to Sonnet and one to Haiku. Check
+1. **Windows laptop, setup.** Clone the repository from GitHub and follow
+   `docs/LAPTOP-SETUP.md` from the top, sections 1 to 7. The owner brings
+   the export file over separately; it never goes through the repository.
+   Before the first commit there, set the git identity (section 13).
+2. **Windows laptop, acceptance checks.** Section 8 of the setup plan and
+   `docs/PHASE-2-ACCEPTANCE.md`, in that page's order (the owner's
+   priorities), on the scratch copy described there. The checks with a
+   microphone or speakers need the owner in the room. Write every result,
+   failure and fix into that page, and save the raw files under
+   `docs/benchmarks/`. A fix is the smallest change that solves the
+   problem. Nothing is "Passed" before it ran there.
+3. **One real Claude call** (check H1). Needs an API key in `.env`
+   (ignored by git). One request that routes to Sonnet and one to Haiku:
    streaming, the stored usage, the cost against the reservation, and that
-   the fallback option is accepted.
-4. **Audio with the owner present.** Allow microphone access, then test
-   recording, push-to-talk end to end, stopping speech, and feedback from
-   the speakers. Measure end of speech to first sound.
-5. **Voice choice.** Apply the owner's pick through `PUT /api/voice/settings`
+   the fallback option is accepted. It stays on the outstanding list until
+   it has run.
+4. **Voice choice.** Apply the owner's pick through `PUT /api/voice/settings`
    or `config.json`.
-6. **If streaming is chosen:** wire partial transcripts from the streaming
+5. **If streaming is chosen:** wire partial transcripts from the streaming
    export into the worker and show them on screen.
-7. **Backlog:** protected storage for the API key, and a backup that leaves
+6. **Backlog:** protected storage for the API key, and a backup that leaves
    the machine. Both wait on the owner (section 11, points 8 and 9).
-8. **Phase 3**, only after the owner says so.
+7. **Phase 3**, only after the owner explicitly authorises it.
+
+Not needed for the laptop, and not done: the `check` commands on the Mac's
+own microphone and speakers (offered to the owner as a trial run, not
+taken up), and the local model on the Mac (Ollama there would have to be
+updated first; section 11, point 2).
 
 ## 13. Working rules for the next session
 
 - **Do not merge, push or deploy without the owner's yes.** Each push needs
-  its own yes.
+  its own yes. Push normally: never force a push, and never roll back what
+  was pushed.
 - **Audit before every push:** Gitleaks over the full history, plus a manual
   look at the files being pushed. Do not print anything found. Loop over
   revisions in `bash`, not `zsh`, which does not split an unquoted variable.
@@ -418,7 +548,21 @@ instead of the Mac.
   2); tests and experiments still go to a scratch folder.
 - **Do not touch the Ollama app installed on the Mac.** On the laptop,
   installing Ollama is part of the setup plan.
-- **Do not play sound through the speakers when nobody is there.**
+- **Do not play sound through the speakers when nobody is there.** The
+  `check` commands that listen or make sound are run with the owner in the
+  room, never with `--yes` on one's own initiative.
+- **A check is "Passed" only after it ran on the laptop and met its mark.**
+  Until then it is "Not run". Mac results, tests in a simulated room and
+  expectations are none of them a pass.
+- **Do not modify the real Home Base database.** No check writes to it: no
+  test question, no test task, no import. Acceptance checks that create
+  conversation turns run on the scratch copy described on the acceptance
+  page, with the real core stopped. Before they begin, confirm that an
+  intact snapshot from after the import exists (`backups list`, `backups
+  verify`: both only read). Delete nothing that exists.
+- **No unnecessary architectural changes.** What a check turns up is fixed
+  with the smallest change that solves it, and gets a line in the failures
+  table with its commit.
 - **Never log what was said or typed.** Logs hold kinds of events only.
 - **A model changes in `models.json`, in a commit.** Never make a check pass
   by editing a hash to match a file that arrived differently.
@@ -452,4 +596,11 @@ uv run python -m helios_voice.audition    # write voice samples
 uv run python -m helios_voice.models            # which speech models are installed
 uv run python -m helios_voice.models download   # fetch the missing ones, verified
 uv run python -m helios_voice.models verify     # re-hash what is installed
+uv run python -m helios_voice.bench --out results.json --ollama http://127.0.0.1:11434 --context 8192 4096
+uv run python -m helios_voice.check devices     # lists microphones and speakers; opens nothing
+uv run python -m helios_voice.check speaker     # these four listen or make sound: owner in the room
+uv run python -m helios_voice.check mic
+uv run python -m helios_voice.check read --label "two metres, quiet" --out results-audio.json
+uv run python -m helios_voice.check echo --out results-audio.json    # add --stop-after 1.5 to time a stop
+uv run python -m helios_voice.check turns --log core.log --speaker-delay 140    # median, 90th percentile, slowest; no device
 ```

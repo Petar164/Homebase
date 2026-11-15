@@ -31,7 +31,7 @@ provider is another small file.
 
 ## What was actually tested
 
-**Automated tests: 98 in the core, 54 in the voice worker, all passing.**
+**Automated tests: 100 in the core, 75 in the voice worker, all passing.**
 They cover each acceptance point of the brief:
 
 | # | Requirement | Where it is tested |
@@ -57,6 +57,28 @@ reaches the internet. Each of these protections was also switched off once,
 one at a time, to confirm that a test then fails. And in the core
 (`voice.test.ts`, "starts the worker without the cloud key"): the worker
 is not handed the Claude key.
+
+Added for the acceptance checks on the laptop
+([PHASE-2-ACCEPTANCE.md](PHASE-2-ACCEPTANCE.md)):
+
+- The core times every spoken exchange from the release of the talk button
+  (`voice.test.ts`, "times a spoken turn from the release of the talk
+  button to the first sound").
+- `apps/voice/tests/test_check.py`: the checks for a real microphone and
+  real speakers, run in a room that exists only in the test, where the
+  microphone hears the speaker a little later and quieter on a clock the
+  test controls. They show that the arithmetic and the order of steps are
+  right. **They say nothing about any real device.** The same file tests
+  the summary of the latency figures (middle value, 90th percentile,
+  slowest), and that the line it reads in the core's log is the line the
+  core writes.
+- `apps/voice/tests/test_bench.py`: the local model is measured at each
+  context size asked for, against a stand-in for Ollama, and what did not
+  fit on the GPU is reported.
+
+Each piece of that logic was also switched off or changed once (19
+changes). Three were not noticed at first; the tests were tightened until
+every one of the 19 made a test fail.
 
 **Real runs on the Mac:**
 
@@ -86,7 +108,9 @@ is not handed the Claude key.
   the other transcribed it word for word.
 
 **Not tested, and why:**
-- **A real microphone and real speakers.** The worker lists the Mac's
+- **A real microphone and real speakers.** The commands that measure them
+  now exist (`helios_voice.check`, below), but of those only the listing of
+  devices has run on real hardware. The worker lists the Mac's
   devices correctly (two microphones, two speakers). Opening the
   microphone did not return: macOS was waiting for an answer to its
   permission dialog, and nobody was there to give it. (That exposed a
@@ -224,8 +248,15 @@ set there too, as a second lock.
   one. **A wake word or a voice is not authentication**: sensitive actions
   still need the on-screen approval or the password.
 - Answers are spoken sentence by sentence while the model is still
-  writing. Speech stops within 50 ms when told to, and pressing talk
-  interrupts it.
+  writing. When told to stop, the worker stops handing sound to the
+  speakers within 50 ms, and pressing talk interrupts it. Sound it has
+  already handed over is still played out: playing is ended with the sound
+  library's `stop()`, which waits for it. How long that is on real devices
+  has not been measured (check D1 of the acceptance page).
+- Every spoken exchange is timed on the core's clock from the moment
+  listening ended: to the transcript, to the model's first sentence, and to
+  that sentence being handed to the speakers. The three figures are written
+  to the core's log (durations only) and shown in the voice status.
 - **Not answering itself.** While HELIOS speaks, and for half a second
   afterwards, the microphone is ignored for the wake word. A transcript
   that arrives right after speaking and matches what HELIOS just said is
@@ -372,9 +403,25 @@ uv run python -m helios_voice.audition
 uv run python -m helios_voice.bench --out results.json --ollama http://127.0.0.1:11434
 ```
 
+```bash
+uv run python -m helios_voice.check devices
+```
+
 The audition writes each male American voice saying the same four
 sentences to the `voice-audition` folder next to the models (add `--play`
-to hear them). The benchmark produces the figures in this page.
+to hear them). The benchmark produces the figures in this page; with
+`--context 8192 4096` it measures the local model at both sizes and says
+how much of it is on the GPU and how much in ordinary memory.
+
+`check` is for a real microphone and real speakers, with someone in the
+room: `devices` lists them, `speaker` says one sentence, `mic` reports how
+loud speech and the room are, `read` counts the words recognised from ten
+sentences read aloud, and `echo` measures how late and how loud HELIOS's
+own voice returns to the microphone and how long a stop takes. Each waits
+for Enter before it listens or makes sound. `turns` needs no device: it
+reads the core's log and gives the middle value, the 90th percentile and
+the slowest of the last ten spoken exchanges. Add `--out FILE` to keep the
+numbers; the file holds no words and no device names.
 
 ## Fallbacks
 
@@ -390,7 +437,10 @@ to hear them). The benchmark produces the figures in this page.
 
 ## Pending on the Windows laptop
 
-Nothing here has been run on it. To do there, in this order:
+Nothing here has been run on it. The checks that decide whether Phase 3
+may begin, with the tool and the mark for each and the table their results
+go into, are in [PHASE-2-ACCEPTANCE.md](PHASE-2-ACCEPTANCE.md): points 3
+and 5 to 8 below are checks A, E, F, G and H3 there. To do, in this order:
 
 1. `npm test` and `uv run pytest` pass on Windows.
 2. `uv run python -m helios_voice.models download --all`, then `verify`:
