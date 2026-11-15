@@ -6,9 +6,11 @@ runs on one always-on machine, shows itself on a TV, and is driven by voice.
 
 Home Base is the whole system. HELIOS is the assistant inside it.
 
-> **Status: phase 1 of 6.** The foundation works: safe storage, backups,
-> login and the first screen. HELIOS cannot talk yet. See the
-> [roadmap](docs/ROADMAP.md) for what is built and what is not.
+> **Status: phase 2 of 6, in progress.** The foundation works (safe
+> storage, backups, login, the first screen) and HELIOS answers typed
+> questions through tools, with approvals. No real model has been connected
+> yet and there is no voice. See the [roadmap](docs/ROADMAP.md) for what is
+> built and what is not.
 
 ## What works today
 
@@ -25,6 +27,12 @@ Home Base is the whole system. HELIOS is the assistant inside it.
 - **The first screen.** Time, today's focus, tasks, the week and system
   health around a slowly turning neural brain.
 - **Import** of the earlier Home Base (a Claude artifact).
+- **HELIOS, first version.** A conversation on the screen. The model can
+  only ask for tools; the core checks every request. Reads run, changes
+  wait for a yes, and sensitive data reaches a cloud model only after
+  approval. Until a model is connected, a rule-based stand-in answers.
+- **Memory search.** Full-text search over past conversations, on this
+  machine.
 
 ## How it is built
 
@@ -46,6 +54,7 @@ them.
 | [Security](docs/SECURITY.md) | Login, risk tiers, cloud approval, hostile content |
 | [Data model](docs/DATA-MODEL.md) | Every table, by phase |
 | [Roadmap](docs/ROADMAP.md) | Phases, acceptance criteria, risks, current state |
+| [Laptop setup](docs/LAPTOP-SETUP.md) | The plan for the first session on the Windows machine |
 
 ## Run it
 
@@ -84,7 +93,7 @@ Stop the core before `restore`, `import` and `owner set-password`.
 ## Develop
 
 ```bash
-npm test          # 45 tests; the no-data-loss guarantees are among them
+npm test          # the no-data-loss and permission guarantees are among them
 npm run typecheck
 npm run dev       # the core, restarting on change
 npm run dev:web   # the screen with hot reload, on port 5173

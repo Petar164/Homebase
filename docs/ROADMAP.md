@@ -10,7 +10,7 @@ committed, so work can stop after any step without leaving a broken state.
 |---|---|
 | 1. Foundation | Built and tested on a Mac. Not yet run on the Windows laptop |
 | 2. HELIOS core | In progress: text conversation works with a stand-in model; real models and voice not yet run |
-| 3. Memory and second brain | Not started |
+| 3. Memory and second brain | First piece built: full-text search over conversations |
 | 4. Neural interface | Not started |
 | 5. Action and integrations | Not started |
 | 6. Evolution | Not started |
@@ -197,7 +197,11 @@ can start without context.
   `homebase` command and the first screen.
 - Phase 2, first part: HELIOS's core loop, tools with risk tiers, approvals,
   the cloud approval gate and cost cap, the event stream, the conversation
-  on the screen, and connections to Claude and Ollama. 69 automated tests.
+  on the screen, and connections to Claude and Ollama.
+- Phase 3, first piece: full-text search over past conversations, as a
+  HELIOS tool. 72 automated tests in total.
+- A written plan for the first session on the laptop
+  ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)).
 
 **Not done / not verified**
 
@@ -209,11 +213,22 @@ can start without context.
 
 **Next**
 
-1. Needs the owner: an Anthropic API key (and a monthly cap he is happy
-   with), then one real conversation to prove the Claude connection.
-2. Protected storage for keys (macOS Keychain, Windows Credential Manager).
-3. The voice worker (Python): start with push-to-talk on the Mac, since the
-   pipeline can be developed before the laptop session.
-4. Phase 3 can start in parallel: the importer for Claude conversation
-   exports and full-text search do not need a model.
-5. A setup session on the Windows laptop.
+Does not need the owner:
+
+1. Sales logging in the standalone (stock list, a sale form that cannot be
+   completed without every invoice field, pasting an address), then the
+   training log and calendar entries. Their tables and import exist; the
+   API and screens do not.
+2. The importer for Claude conversation exports, written tolerantly and
+   then checked against a real export.
+
+Needs the owner:
+
+3. An Anthropic API key and a monthly cap, then one real conversation to
+   prove the Claude connection.
+4. A Claude data export (claude.ai, Settings, Privacy, Export data) to
+   check the importer against.
+5. The session on the Windows laptop ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)).
+
+Later in phase 2: protected storage for keys, the voice worker, starting
+with Windows, off-machine backup.
