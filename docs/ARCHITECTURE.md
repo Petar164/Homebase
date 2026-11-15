@@ -77,8 +77,8 @@ without touching the core.
 |---|---|---|---|
 | Frontend | `apps/web`: React, TypeScript, Tailwind. TV screen, login, Home Base screens | Layout, animation, the 3D brain | Talk to the database, hold secrets, decide permissions |
 | Backend | `apps/core`: Node, TypeScript, Fastify | The API, sessions, the single write path to data | Run model output as code |
-| Voice | `apps/voice` (phase 2): Python worker, supervised by the core | Wake word, speech-to-text, text-to-speech, the audio devices | Decide what to do with what it heard |
-| AI orchestration | Module in the core | Choosing a model, building the prompt, the tool loop, cost limits | Call a cloud model with sensitive context without approval |
+| Voice | `apps/voice`: a Python worker the core starts as a child process and restarts if it dies | The microphone and speakers, speech detection, speech to text, text to speech, the wake word | Decide what to do with what it heard, or grant any permission |
+| AI orchestration | Module in the core (`src/ai`) | Choosing a model by fixed rules, the tool loop, the euro budget, the record of every cloud call | Call a cloud model with sensitive context without approval, or show secret content to any model |
 | Memory | Module in the core | Transcripts, extracted memories, the knowledge graph, retrieval | Present an interpretation as a fact |
 | Persistence | Module in the core | The data folder, the database, migrations | Create a blank database over an existing one |
 | Permissions and auth | Module in the core | Login, step-up authentication, risk tiers, standing grants, the audit log | Accept voice alone for a sensitive action |
@@ -91,21 +91,24 @@ without touching the core.
 
 "Helios, what is due this week?"
 
-1. The voice worker hears the wake word, records until the speaker stops and
-   turns the audio into text. It sends the text to the core.
+1. The voice worker records while the talk button is held (or, later, from
+   the wake word until the speaker stops) and turns the audio into text. It
+   sends the text to the core.
 2. The core stores the message in the conversation and sets the state to
    *thinking*. The screen sees the state over the event stream and the brain
    changes.
 3. The orchestrator asks memory for relevant context, and builds a prompt.
    Every piece of context carries a sensitivity label.
-4. The router picks a model. Routine questions go to the local model. Hard
-   ones go to the cloud model, but only if nothing in the context is labelled
+4. The router picks a model by fixed rules. Routine questions go to the
+   local model. Hard ones go to the cloud model, but only if cloud use is on,
+   the month's budget has room, and nothing in the context is labelled
    sensitive, or the owner approves that specific request.
 5. The model answers with text and, if needed, tool requests. Each request is
    checked against its schema, its risk tier and the current grants. Reading
    tasks is tier 0 and runs at once.
-6. The answer is stored, sent to the screen and to the voice worker, which
-   speaks it. State returns to *idle*.
+6. The answer is stored and sent to the screen, and each finished sentence
+   goes to the voice worker, which speaks it while the rest is still being
+   written. State returns to *idle*.
 
 Every step from 3 to 5 leaves an audit entry.
 
@@ -114,15 +117,22 @@ Every step from 3 to 5 leaves an audit entry.
 Models sit behind one interface (`chat`, with tools and streaming), so no
 part of the system depends on one vendor.
 
-| Role | Default | Notes |
+| Role | Model | Notes |
 |---|---|---|
-| Cloud reasoning | Claude, through the official SDK (`claude-opus-5-5`) | Billed per use, separately from any Claude subscription. Needs a monthly cap |
-| Cloud bulk work (summaries, extraction) | `claude-haiku-5-5` | Far cheaper; used for background passes over transcripts |
-| Local reasoning | A 7 to 8 billion parameter model through Ollama | Must fit in 8 GB of GPU memory next to speech models. Chosen by testing on the laptop |
-| Local embeddings | A small embedding model through Ollama | Memory search never needs the cloud |
-| Tests | A scripted fake model | The whole pipeline is testable without a key or a GPU |
+| Local reasoning, the default | `qwen3.5:4b` through Ollama | Ordinary conversation and Home Base questions. Runs on the GPU |
+| Cloud, hard reasoning | `claude-sonnet-5-5` through the official SDK | Long or analytical requests, or when asked. Billed per use, separately from any Claude subscription |
+| Cloud, light work | `claude-haiku-5-5` | Extraction, classification, summaries, background passes |
+| Local embeddings (phase 3) | A small embedding model through Ollama | Memory search never needs the cloud |
+| Stand-in | Fixed rules | Answers only while no real model is connected |
+| Tests | A scripted model | The whole pipeline is testable without a key or a GPU |
 
-Model names are configuration, not code.
+Speech runs on the CPU and leaves the GPU to the language model and the
+screen: Parakeet Unified for speech to text, Silero for speech detection,
+Kokoro for the voice, openWakeWord for the wake phrase.
+
+Model names, limits and prices are configuration, not code. Which model
+answers, the budget, the measurements and what is still unverified are in
+[AI-VOICE-STACK.md](AI-VOICE-STACK.md).
 
 ## Memory in one paragraph
 
@@ -165,7 +175,7 @@ voice.
 ```
 apps/core      the always-on core (TypeScript, runs on Node directly)
 apps/web       the screen (React, built to static files the core serves)
-apps/voice     the voice worker (Python, phase 2)
+apps/voice     the voice worker (Python, run with uv)
 packages/shared  types, validation schemas and pure domain logic used by both
 docs/          these documents
 ```

@@ -1,99 +1,237 @@
 # AI and voice stack
 
 Which models HELIOS uses, how they are run, what they cost, and what has
-actually been tested. This page separates three things on purpose:
+actually been tested. This page keeps three things apart on purpose:
 **verified on the Mac** (the development machine), **written but not yet
 run**, and **pending on the Windows laptop** (the machine HELIOS will live
-on). Nothing here is a Windows result yet.
+on). There is no Windows result on this page.
 
-Status: work in progress on the branch `feature/ai-voice-stack`.
+Status: built on the branch `feature/ai-voice-stack`. Measurements are from
+15 November 2026 on an Apple M5 Max with 48 GB of memory. The raw numbers
+are in [benchmarks/2026-11-15-mac-m5-max.json](benchmarks/2026-11-15-mac-m5-max.json).
 
 ## The stack
 
 | Job | Model | Runs through | State |
 |---|---|---|---|
-| Everyday reasoning, Home Base questions | `qwen3.5:4b` | Ollama 0.40.16, on this machine | **Runs on the Mac**, through HELIOS's own connection, and calls tools correctly (see below). Needs Ollama 0.19 or newer |
-| Hard reasoning, planning, analysis | `claude-sonnet-5-5` | Anthropic API | Connection written and tested against a fake. No real call yet: there is no API key |
-| Extraction, classification, summaries, background work | `claude-haiku-5-5` | Anthropic API | Same |
-| Speech to text | NVIDIA Parakeet Unified English 0.6B, int8 | sherpa-onnx 2.0.1, on the CPU | **Runs on the Mac.** Transcribed a synthesised test sentence exactly |
-| Speech to text, fallback | Parakeet TDT 0.6B v2, int8 | sherpa-onnx 2.0.1, on the CPU | **Runs on the Mac.** Same result on the same sentence |
-| Speech detection | Silero VAD | sherpa-onnx | Downloaded, not yet run |
-| HELIOS's voice | Kokoro 82M, voice `am_michael` | kokoro-onnx 0.6.1, on the CPU | **Runs on the Mac** |
-| Wake phrase | openWakeWord 0.6.0 | onnxruntime | Installed. "Hey Helios" does not exist as a model yet and needs training |
+| Everyday reasoning, Home Base questions | `qwen3.5:4b` (4.5 billion parameters, quantisation `nvfp4`, 4.0 GB on disk) | Ollama 0.40.16, on the machine | **Works on the Mac**, through the whole HELIOS loop with tools. Needs Ollama 0.19 or newer |
+| Hard reasoning, planning, analysis | `claude-sonnet-5-5` | Anthropic API, SDK 1.8.0 | Written; request checked against the SDK's types and tested with a fake. **No real call yet: there is no API key** |
+| Extraction, classification, summaries, background work | `claude-haiku-5-5` | same | same |
+| Speech to text | NVIDIA Parakeet Unified English 0.6B, int8, non-streaming export | sherpa-onnx 2.0.1, CPU | **Works on the Mac** |
+| Speech to text with words as you speak | the same model, streaming export (560 ms steps) | sherpa-onnx 2.0.1, CPU | **Works on the Mac**; not yet wired into the worker |
+| Speech to text, fallback | Parakeet TDT 0.6B v2, int8 | sherpa-onnx 2.0.1, CPU | **Works on the Mac**; used automatically if the preferred model will not load |
+| Speech detection | Silero VAD | sherpa-onnx 2.0.1, CPU | **Works on the Mac** |
+| HELIOS's voice | Kokoro 82M, voice `am_michael`, int8 | kokoro-onnx 0.6.1 on onnxruntime 1.32.0, CPU | **Works on the Mac** |
+| Wake phrase | openWakeWord 0.6.0 | onnxruntime, CPU | The wiring works with a stock model ("hey jarvis"). **"Hey Helios" is not trained and does not work** |
 
-Model names, context size, effort and prices are settings in `config.json`
-in the data folder (section `ai`), not code.
+Every name, context size, effort level, price and limit above is a setting
+in `config.json` in the data folder (sections `ai` and `voice`), not code.
+Models sit behind one interface (`apps/core/src/ai/types.ts`), so another
+provider is another small file.
 
-## Findings so far
+## What was actually tested
 
-**The preferred speech model is available in the form that was hoped for.**
-The sherpa-onnx project publishes official int8 exports of
-`nvidia/parakeet-unified-en-0.6b`: one non-streaming, and three streaming
-ones with different chunk sizes (240, 560 and 1120 ms). Support arrived in
-sherpa-onnx 1.13.4. The non-streaming export loads with
-`OfflineRecognizer.from_transducer(..., model_type="nemo_transducer")`.
-The streaming exports have not been run yet.
+**Automated tests: 97 in the core, 19 in the voice worker, all passing.**
+They cover each acceptance point of the brief:
 
-**`qwen3.5:4b` needs a newer Ollama than the one installed on the Mac.**
-Ollama 0.18.3 refuses the download and points to the download page. The
-current release is 0.40.16. For testing, that release is run separately on
-another port, so the installed Ollama is untouched. To use the model for
-real on the Mac, update Ollama. On the laptop a fresh install is current
-anyway.
-
-**openWakeWord's dependencies are ageing.** Version 0.6.0 (February 2024)
-asks for a Linux-only package that has no build for Python 3.12. The voice
-worker's install is therefore limited to Windows and macOS, where it is not
-needed.
-
-## First measurements (Mac, Apple M5 Max, CPU only, one run each)
-
-These are a first contact, not a benchmark: one sentence, one run, all
-models loaded in one process. Proper measurements, one model per process,
-come with the benchmark step. They say nothing about the laptop.
-
-| What | Result |
-|---|---|
-| Kokoro int8, 5.7 s of speech | loads in 0.3 s; first sentence 0.8 s; then 0.4 s (about 15 times faster than real time) |
-| Kokoro full precision, same sentence | loads in 0.2 s; 0.65 s (about 9 times faster than real time) |
-| Parakeet Unified int8, non-streaming, 5.7 s of speech | loads in 0.7 s; transcribes in 0.13 s; text exactly right, with punctuation |
-| Parakeet TDT v2 int8, same audio | loads in 0.7 s; transcribes in 0.12 s; text exactly right |
-
-Male American Kokoro voices available for the audition: `am_adam`,
-`am_echo`, `am_eric`, `am_fenrir`, `am_liam`, `am_michael`, `am_onyx`,
-`am_puck`, `am_santa`.
-
-## The local model, first real run (Mac, one run)
-
-`qwen3.5:4b` as Ollama delivers it: 4.5 billion parameters, quantisation
-`nvfp4`, 4.0 GB on disk, Apache 2.0 licence, supports tools, vision and
-optional thinking (switched off here for speed). Loaded with an 8,192-token
-context it took 4.8 GB, entirely on the GPU. On the Mac, Ollama runs it
-with Apple's MLX; on the laptop it will use a different runner, so memory
-and speed there are unknown until measured.
-
-Six requests were sent through `OllamaProvider`, the same code HELIOS uses,
-with HELIOS's real tool list (about 1,020 tokens of instructions and tools):
-
-| Request | What the model did | Time |
+| # | Requirement | Where it is tested |
 |---|---|---|
-| "What is due this week?" | asked for `get_overview` | 3.0 s (includes loading the model) |
-| "Add a task to call the dentist tomorrow" | asked for `add_task`, title and area right, but `due: "tomorrow"` instead of a date | 0.75 s |
-| "What did I say about the darkroom budget?" | asked for `search_conversations` with "darkroom budget" | 0.34 s |
-| "How much did the shop make in 2026-11?" | asked for `get_money_summary` for 2026-11 | 0.28 s |
-| "Which model answered that?" | asked for `get_answer_info` | 0.27 s |
-| "Say hello in five words." | answered in text, no tool (nine words, not five) | 0.17 s |
+| 1 | The right model for each routing condition | `helios.test.ts`: "picks the model for each routing condition" |
+| 2 | Restricted information cannot pass the cloud gate | "never escalates to the cloud when the data policy forbids it", "does not send money data to the cloud until the owner approves" |
+| 3 | Usage accounting survives restarts | "keeps its count across a restart" |
+| 4 | The cap blocks further cloud use | "stops cloud calls at the monthly cap", "cannot be passed by two requests at once, or by a crash" |
+| 5 | A local-model failure does not damage a conversation or the core | "falls back to another model without damaging the conversation" |
+| 6 | Speech reaches the conversation pipeline | `voice.test.ts`: "turns what was heard into a stored turn and speaks the answer" |
+| 7 | Speech can be interrupted | `apps/voice/tests`: "speech can be stopped at once", "pressing talk interrupts helios" |
+| 8 | A voice-worker failure does not stop the core | `voice.test.ts`: "is started again with growing pauses, then left off, and the core keeps answering" |
+| 9 | No words, tokens or audio in logs | "logs none of the words" (core), "no words reach the log" (worker) |
+| 10 | Earlier tests still pass | all 97 |
 
-Five of five tool requests chose the right tool. One had an input the core
-rejects (a relative date); the core's validation catches that and the model
-is told, which is the design. Six requests are an indication, not a
-reliability figure: a proper test set is part of the benchmark step.
+**Real runs on the Mac:**
+
+- A five-turn conversation through the whole HELIOS loop with `qwen3.5:4b`:
+  it read the task list through tools, answered correctly, asked for
+  confirmation before adding a task (with the right date for "next
+  Friday"), and reported which model answered and the cloud spending.
+  Answers took 0.2 to 1.5 seconds.
+- The real speech models end to end in memory: HELIOS's voice was
+  synthesised and fed back in as if from the microphone; both recognisers
+  transcribed it word for word.
+- The core's real child-process connection to the real Python worker.
+- Push-to-talk in a browser against that worker (with scripted engines).
+
+**Not tested, and why:**
+
+- **A real microphone and real speakers.** Recording needs the owner to
+  allow microphone access in a macOS dialog, and playing speech out loud
+  was not done unattended at night. So room acoustics, the speaker-to-
+  microphone feedback test and echo cancellation are all still open.
+- **Claude.** No API key exists on this machine.
+- **Everything on Windows.**
+
+## Measurements (Mac, CPU for all speech models)
+
+Each model was measured alone in a fresh process. Test speech was
+synthetic (Kokoro, in voices other than HELIOS's), so the recognition
+figures are an upper bound: a person two metres from a laptop microphone
+will do worse.
+
+| Model | Loads in | Speed | Memory | Idle CPU |
+|---|---|---|---|---|
+| Kokoro int8 | 0.24 s | first sentence 0.74 s cold, 0.30 s warm; 16 times faster than real time | 398 MB | 2% |
+| Kokoro full precision | 0.26 s | first sentence 0.98 s cold, 0.54 s warm; 9.5 times faster than real time | 669 MB | 3% |
+| Parakeet Unified, non-streaming | 0.65 s | 24 ms per second of audio | 1,889 MB | 2% |
+| Parakeet TDT v2 | 0.62 s | 23 ms per second of audio | 1,882 MB | 3% |
+| Parakeet Unified, streaming 560 ms | 0.67 s | first words after 1.1 s of speech | 1,678 MB | not measured |
+| Silero VAD | 0.02 s | 3 ms per second of audio | 34 MB | not measured |
+| openWakeWord (stock model) | 1.0 s | 19 ms per second of audio | 185 MB | 0% |
+| `qwen3.5:4b` at 8,192 tokens of context | 0.5 s | 134 tokens per second; a short answer in 0.33 s | 4,228 MB, all on the GPU | not measured |
+
+Recognition on ten synthetic sentences (94 words):
+
+| Condition | Parakeet Unified | Parakeet TDT v2 |
+|---|---|---|
+| Clean | 5 words differ | 5 words differ |
+| White noise, speech 10 dB louder | 6 | 5 |
+| White noise as loud as the speech | 5 | 8 |
+| A second voice, 10 dB quieter | 5 | 5 |
+
+Of the five differences on clean speech, four are numbers written as
+digits ("three" as "3", "forty two by eighteen" as "42 by 18") and one is
+a real mistake ("shop" heard as "sharp").
+
+Listening and speaking at the same moment barely slowed either down
+(recognition 117 ms alone, 133 ms together; synthesis 302 ms and 305 ms),
+and both models loaded together took 2,201 MB.
+
+The stock wake model scored 0.999 on its own phrase, also with noise, and
+0.0 on all ten other sentences.
+
+**What this suggests for the laptop, to be checked there:** the speech
+models need about 2.5 GB of ordinary memory and no GPU memory, which
+leaves the 8 GB of GPU memory to the language model and the 3D brain. The
+language model took 4.2 GB on the Mac; the laptop uses a different runner,
+so its figure is unknown. The two Parakeet exports each take almost 2 GB,
+so only one should be loaded at a time.
+
+## Routing: which model answers
+
+Fixed rules in `apps/core/src/ai/policy.ts`. The same request always takes
+the same route, and the reason is stored with the answer and shown under
+it on screen. HELIOS can also be asked ("which model answered that?").
+
+1. You asked for stronger reasoning ("think hard", "use the stronger
+   model", or the screen's "Think hard" option): the strong cloud model.
+2. The request is long (over 600 characters) or analytical (compare,
+   analyse, trade-offs, strategy, step by step, and similar): the strong
+   cloud model.
+3. Everything else: the local model.
+4. No local model running: the light cloud model.
+
+Background work (extraction, summaries) goes to the light cloud model,
+then the local one. A model that fails is skipped for the rest of that
+turn and the next allowed one answers.
+
+A cloud model is used only when all of these hold: cloud use is switched
+on (`ai.cloud.enabled`); this month's budget has room; nothing labelled
+secret is involved; and nothing labelled sensitive is involved, or you
+approved sending exactly that conversation. When a rule blocks the cloud,
+the local model answers and the reason says so. Tool results and recalled
+memory carry their labels with them. Input that looks like a password or
+key is labelled secret and shown to no model.
+
+## Budget and cost
+
+- Counted in euros, kept in the database, so it survives restarts.
+- Prices are in US dollars. One dollar is counted as one euro, plus 21% for
+  VAT and billing differences. The real bill should come out lower.
+- Before each cloud call the most it can cost is set aside (the whole
+  prompt plus the full answer allowance: 8,000 tokens for Sonnet, 2,000 for
+  Haiku). If that does not fit under the cap, the call is not made. After
+  the call the reservation is replaced by the real cost.
+- A warning at €15, shown once a month. A hard stop at €20, after which
+  the local model answers and says why.
+- If the core dies during a call, that call is counted at its full
+  estimate.
+
+| Model | Input, per million tokens | Output, per million tokens |
+|---|---|---|
+| `claude-sonnet-5-5` | $2.00 | $10.00 |
+| `claude-haiku-5-5` | $0.10 (prompts up to 100,000 tokens; $0.50 above) | $0.50 ($2.50 above) |
+
+**What it is likely to cost** (worked out from the prices above, not
+measured): a typical Sonnet answer with HELIOS's instructions and tools is
+about 1,500 tokens in and 300 out, which is $0.006, counted here as
+€0.007. Twenty such answers a day is about €4.50 a month. A million tokens
+of background reading by Haiku is $0.10. Local answers cost nothing. On
+those figures the €20 cap is not reached in normal use; the reservation
+rule means the last €0.10 or so of the cap is never spent.
+
+A Claude subscription does not include API use. An API key and its billing
+are set up separately at console.anthropic.com, and a spending limit can be
+set there too, as a second lock.
+
+## How voice is built
+
+```
+ screen: hold-to-talk ──► core ──► voice worker (apps/voice, Python)
+                           ▲             │  microphone, speech detection,
+                           │             │  Parakeet, Kokoro, speakers
+        transcript, states └─────────────┘
+```
+
+- The core starts the worker as a child process and talks to it over its
+  standard input and output, one JSON object per line. The protocol is
+  listed in `apps/voice/helios_voice/protocol.py`.
+- The worker only hears and speaks. What was heard becomes an ordinary
+  conversation turn, so a spoken request has exactly the limits of a typed
+  one. **A wake word or a voice is not authentication**: sensitive actions
+  still need the on-screen approval or the password.
+- Answers are spoken sentence by sentence while the model is still
+  writing. Speech stops within 50 ms when told to, and pressing talk
+  interrupts it.
+- **Not answering itself.** While HELIOS speaks, and for half a second
+  afterwards, the microphone is ignored for the wake word. A transcript
+  that arrives right after speaking and matches what HELIOS just said is
+  dropped. Real echo cancellation is not built: it needs the speaker signal
+  as a reference, and is to be judged on the laptop with the TV speakers.
+- Models load the first time they are needed.
+- A missing microphone, a broken speaker or a model that will not load is
+  reported and survived. If the worker dies, the core restarts it after 1,
+  2, 5, 15 and 30 seconds, then leaves it off and says so. The core, the
+  data and the conversation are not affected.
+- States sent to the screen: `idle`, `listening`, `transcribing`,
+  `thinking`, `retrieving`, `speaking`, `acting`, `presenting`, `error`.
+- Words never go to the log, in the worker or the core.
+
+## The wake phrase
+
+What exists: wake-word mode with on and off, an adjustable threshold,
+suppression while HELIOS speaks, and push-to-talk alongside it. It was
+tested with openWakeWord's stock "hey jarvis" model.
+
+What does not exist: a "Hey Helios" model. openWakeWord has no such model;
+one has to be trained. As far as could be established without doing it:
+
+- Training uses thousands of synthetic recordings of the phrase, made with
+  the Piper voice generator, mixed with background sound and room echo,
+  against a large set of other speech and noise.
+- The project's own notebook runs on a free Google Colab GPU; Home
+  Assistant describes training a basic model in about an hour. One
+  community setup downloads roughly 20 GB of training data.
+- Results vary: users report models that range from good to poor. A
+  trained model has to be tested for false alarms against hours of TV and
+  room sound before it is trusted.
+
+None of those figures were verified here. Until a model is trained and
+tested, push-to-talk is the way to talk to HELIOS.
 
 ## Where models come from and where they live
 
-Speech models are downloaded from the projects' own release pages and kept
-in the `models` folder of the data folder (never in the repository, and not
-part of snapshots, because they can be downloaded again).
+Speech models are downloaded from the projects' own release pages into the
+`models` folder of the data folder (never the repository, and not part of
+snapshots, because they can be downloaded again). A SHA-256 of every
+downloaded file is recorded in `SHA256SUMS` there.
 
 | File | Source | Size |
 |---|---|---|
@@ -104,70 +242,76 @@ part of snapshots, because they can be downloaded again).
 | `kokoro-v1.0.int8.onnx`, `kokoro-v1.0.onnx`, `voices-v1.0.bin` | github.com/thewh1teagle/kokoro-onnx, release `model-files-v1.0` | 96 MB, 321 MB, 27 MB |
 | `melspectrogram.onnx`, `embedding_model.onnx`, `hey_jarvis_v0.1.onnx` | github.com/dscripka/openWakeWord, release `v0.5.1` | about 1 MB each |
 
-A SHA-256 of every downloaded file is recorded in `SHA256SUMS` in the
-models folder. Pinning those hashes in the worker is still to do.
+## Setting it up
 
-## Routing: which model answers
+1. **Ollama**, version 0.19 or newer, then `ollama pull qwen3.5:4b`.
+   On the development Mac the installed Ollama was 0.18.3, which refuses
+   this model; update it from its menu.
+2. **uv** (the Python tool), then in `apps/voice`: `uv sync --extra wake`.
+   This installs Python 3.12 and the speech packages. Only Windows and
+   macOS are supported, because openWakeWord 0.6.0 asks for a Linux-only
+   package that has no build for Python 3.12.
+3. **Speech models**: download the files in the table above into
+   `<data folder>/models/` in the sub-folders `stt`, `vad`, `tts`, `wake`.
+   (A download command inside the app is still to be written.)
+4. **An Anthropic API key** in the environment as `ANTHROPIC_API_KEY`
+   before starting the core. Protected storage for the key is still to do.
+5. In `config.json` in the data folder set `"voice": { "enabled": true }`
+   and start the core. The status line on screen shows the model, and a
+   "Hold to talk" button appears.
 
-Fixed rules, in `apps/core/src/ai/policy.ts`. The same request always takes
-the same route, and the reason is stored with the answer.
+Useful commands, from `apps/voice`:
 
-1. You asked for stronger reasoning ("think hard", "use the stronger
-   model", or the screen's option): the strong cloud model.
-2. The request is long (over 600 characters) or analytical (compare,
-   analyse, trade-offs, strategy, step by step, and similar): the strong
-   cloud model.
-3. Everything else: the local model.
-4. No local model running: the light cloud model.
+```bash
+uv run pytest
+```
 
-Background work (extraction, summaries) goes to the light cloud model, then
-the local one.
+```bash
+uv run python -m helios_voice.audition
+```
 
-A cloud model is used only when all of these hold: cloud use is switched on
-(`ai.cloud.enabled`); this month's budget has room; nothing labelled secret
-is involved; and nothing labelled sensitive is involved, or you approved
-sending exactly that conversation. When a rule blocks the cloud, the local
-model answers and the reason says so. Anything labelled secret is withheld
-from every model, the local one included.
+```bash
+uv run python -m helios_voice.bench --out results.json --ollama http://127.0.0.1:11434
+```
 
-## Budget
+The audition writes each male American voice saying the same four
+sentences to the `voice-audition` folder next to the models (add `--play`
+to hear them). The benchmark produces the figures in this page.
 
-- Counted in euros, kept in the database, so it survives restarts.
-- Prices are in US dollars. One dollar is counted as one euro, plus 21% for
-  VAT and billing differences. The real bill should come out lower.
-- Before each cloud call the most it can cost is set aside (the whole prompt
-  plus the full answer allowance: 8,000 tokens for Sonnet, 2,000 for Haiku).
-  If that does not fit under the cap, the call is not made. After the call
-  the reservation is replaced by the real cost.
-- Warning at €15, shown once a month. Hard stop at €20.
-- If the core dies during a call, that call is counted at its full estimate.
+## Fallbacks
 
-| Model | Input, per million tokens | Output, per million tokens |
-|---|---|---|
-| `claude-sonnet-5-5` | $2.00 | $10.00 |
-| `claude-haiku-5-5` | $0.10 (prompts up to 100,000 tokens; $0.50 above) | $0.50 ($2.50 above) |
-
-A Claude subscription does not include API use. An API key and its billing
-are set up separately at console.anthropic.com.
-
-## Still to build in this work
-
-- A proper tool-calling test set for `qwen3.5:4b`, run through the whole
-  HELIOS loop, and clearer date wording in the tool descriptions.
-- The voice worker (`apps/voice`): microphone, Silero VAD, Parakeet,
-  Kokoro, push-to-talk, cancelling speech, device selection, recovery.
-- The core's side: starting and supervising the worker, speech into the
-  conversation, answers spoken sentence by sentence, the new states.
-- Not answering its own voice: the microphone is ignored while HELIOS
-  speaks. Real echo cancellation is to be investigated.
-- Wake word plumbing with a stock model, and what training "Hey Helios"
-  takes.
-- The audition tool for comparing voices.
-- Benchmarks, one model per process.
+| If this fails | Then |
+|---|---|
+| Parakeet Unified will not load | Parakeet TDT v2 is loaded instead, and the log says so |
+| The local model or Ollama is down | The light cloud model answers, if the rules allow; otherwise HELIOS says no model answered |
+| The cloud is blocked (switch, budget, sensitive content) | The local model answers and the reason is shown |
+| The voice worker dies | It is restarted; typing keeps working throughout |
+| The microphone or speaker disappears | An error state on screen; the next press tries again |
+| No wake model | Push-to-talk |
 
 ## Pending on the Windows laptop
 
-Everything. In particular: GPU memory with the local model loaded, speech
-models on that CPU, the laptop microphone at two metres with TV sound,
-feedback from the TV speakers, time from end of speech to first audio, and
-behaviour when Ollama or the voice worker is killed.
+Nothing here has been run on it. To do there, in this order:
+
+1. `npm test` and `uv run pytest` pass on Windows.
+2. `qwen3.5:4b` in Ollama on the RTX 4060: GPU memory at 4,096 and 8,192
+   tokens of context, tokens per second, cold start, tool calls.
+3. The benchmark above on the Ryzen CPU: load times, speed and memory of
+   each speech model, and how they behave while the language model runs.
+4. The laptop microphone at two metres: recognition quiet, and with TV
+   sound; choose the non-streaming or the streaming export.
+5. HELIOS speaking through the TV speakers: does the microphone pick it up
+   enough to trigger anything, is the half-second guard enough, is echo
+   cancellation needed.
+6. Time from the end of speech to the first sound of the answer, local
+   and cloud.
+7. Killing Ollama and the voice worker while in use.
+8. Idle load with everything running, for a machine that is always on.
+
+## Sources
+
+- [NVIDIA Parakeet Unified English 0.6B, model card](https://huggingface.co/nvidia/parakeet-unified-en-0.6b)
+- [sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases) and its [NeMo transducer models](https://csukuangfj.github.io/sherpa/onnx/pretrained_models/offline-transducer/nemo-transducer-models.html)
+- [Home Assistant on training wake words](https://home-assistant.io/blog/2023/10/12/year-of-the-voice-chapter-4-wakewords)
+- [piper-sample-generator](https://github.com/dscripka/piper-sample-generator)
+- [Community notebooks for training openWakeWord models](https://community.home-assistant.io/t/colab-notebooks-to-train-your-custom-openwakeword-or-microwakeword/1026635)

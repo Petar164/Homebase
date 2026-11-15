@@ -6,11 +6,12 @@ runs on one always-on machine, shows itself on a TV, and is driven by voice.
 
 Home Base is the whole system. HELIOS is the assistant inside it.
 
-> **Status: phase 2 of 6, in progress.** The foundation works (safe
-> storage, backups, login, the first screen) and HELIOS answers typed
-> questions through tools, with approvals. No real model has been connected
-> yet and there is no voice. See the [roadmap](docs/ROADMAP.md) for what is
-> built and what is not.
+> **Status: phase 2 of 6.** The foundation works (safe storage, backups,
+> login, the first screen). HELIOS answers typed and push-to-talk requests
+> through tools, with approvals, using a local model, with cloud models
+> behind a budget and an approval gate. Speech runs on the development
+> machine; nothing has been run on the target Windows machine yet. See the
+> [roadmap](docs/ROADMAP.md) and the [AI and voice stack](docs/AI-VOICE-STACK.md).
 
 ## What works today
 
@@ -39,6 +40,7 @@ Home Base is the whole system. HELIOS is the assistant inside it.
 ```
 apps/core        the always-on core: API, data, backups, security (TypeScript on Node)
 apps/web         the screen: React, built to static files the core serves
+apps/voice       the voice worker: microphone, speech to text, speech (Python)
 packages/shared  types, validation and domain logic used by both
 docs/            the design
 ```
@@ -54,6 +56,7 @@ them.
 | [Security](docs/SECURITY.md) | Login, risk tiers, cloud approval, hostile content |
 | [Data model](docs/DATA-MODEL.md) | Every table, by phase |
 | [Roadmap](docs/ROADMAP.md) | Phases, acceptance criteria, risks, current state |
+| [AI and voice stack](docs/AI-VOICE-STACK.md) | The models, routing, budget, measurements, and what is unverified |
 | [Laptop setup](docs/LAPTOP-SETUP.md) | The plan for the first session on the Windows machine |
 
 ## Run it

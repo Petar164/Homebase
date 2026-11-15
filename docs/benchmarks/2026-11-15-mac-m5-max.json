@@ -1,0 +1,128 @@
+{
+  "measured_at": "2026-11-15T05:30:36+0100",
+  "machine": {
+    "system": "Darwin 25.5.0",
+    "processor": "arm",
+    "cpu_cores": 18,
+    "ram_gb": 48,
+    "python": "3.12.14"
+  },
+  "note": "Speech is synthetic (Kokoro, voices other than HELIOS's) and no audio device is used. All speech models run on the CPU.",
+  "test_speech": {
+    "clips": 10,
+    "seconds": 29.9
+  },
+  "tts_int8": {
+    "load_ms": 236,
+    "first_sentence_cold_ms": 744,
+    "first_sentence_warm_ms": 303,
+    "first_sentence_audio_s": 4.59,
+    "times_faster_than_real_time": 16.2,
+    "memory_mb": 398,
+    "idle_cpu_percent": 2.09
+  },
+  "tts_full": {
+    "load_ms": 261,
+    "first_sentence_cold_ms": 977,
+    "first_sentence_warm_ms": 542,
+    "first_sentence_audio_s": 4.67,
+    "times_faster_than_real_time": 9.5,
+    "memory_mb": 669,
+    "idle_cpu_percent": 3.12
+  },
+  "stt_parakeet_unified": {
+    "load_ms": 647,
+    "first_decode_cold_ms": 40,
+    "clean": {
+      "word_error_percent": 5.3,
+      "ms_per_second_of_audio": 24.1
+    },
+    "noise_snr_10db": {
+      "word_error_percent": 6.4,
+      "ms_per_second_of_audio": 24.0
+    },
+    "noise_snr_0db": {
+      "word_error_percent": 5.3,
+      "ms_per_second_of_audio": 23.9
+    },
+    "second_voice_10db_quieter": {
+      "word_error_percent": 5.3,
+      "ms_per_second_of_audio": 24.1
+    },
+    "memory_mb": 1889,
+    "idle_cpu_percent": 1.82
+  },
+  "stt_parakeet_tdt_v2": {
+    "load_ms": 621,
+    "first_decode_cold_ms": 38,
+    "clean": {
+      "word_error_percent": 5.3,
+      "ms_per_second_of_audio": 23.3
+    },
+    "noise_snr_10db": {
+      "word_error_percent": 5.3,
+      "ms_per_second_of_audio": 23.2
+    },
+    "noise_snr_0db": {
+      "word_error_percent": 8.5,
+      "ms_per_second_of_audio": 23.0
+    },
+    "second_voice_10db_quieter": {
+      "word_error_percent": 5.3,
+      "ms_per_second_of_audio": 23.2
+    },
+    "memory_mb": 1882,
+    "idle_cpu_percent": 2.55
+  },
+  "stt_parakeet_unified_streaming_560ms": {
+    "load_ms": 672,
+    "word_error_percent": 5.3,
+    "first_words_after_s_of_audio": 1.1,
+    "memory_mb": 1678
+  },
+  "speech_detection_silero": {
+    "load_ms": 17,
+    "ms_per_second_of_audio": 3.26,
+    "kept_s_of": [
+      2.74,
+      5.82
+    ],
+    "silence_gives_no_speech": true,
+    "memory_mb": 34
+  },
+  "wake_openwakeword": {
+    "model": "hey_jarvis (stock model, used to test the wiring; 'Hey Helios' is not trained)",
+    "load_ms": 1042,
+    "ms_per_second_of_audio": 19.08,
+    "score_on_its_phrase": 0.999,
+    "highest_score_on_ten_other_sentences": 0.0,
+    "score_on_its_phrase_with_noise_snr_10db": 0.999,
+    "memory_mb": 185,
+    "idle_cpu_percent": 0.0
+  },
+  "listening_and_speaking_together": {
+    "stt_alone_ms": 117,
+    "stt_while_speaking_ms": 133,
+    "tts_alone_ms": 302,
+    "tts_while_listening_ms": 305,
+    "both_models_memory_mb": 2201
+  },
+  "local_language_model": {
+    "model": "qwen3.5:4b",
+    "quantisation": "nvfp4",
+    "parameters": "4.5B",
+    "context_tokens": 8192,
+    "cold_start": {
+      "total_ms": 647,
+      "load_ms": 524,
+      "answer_tokens": 9,
+      "tokens_per_second": 129.1
+    },
+    "warm": {
+      "median_total_ms": 329,
+      "median_tokens_per_second": 133.6
+    },
+    "loaded_size_mb": 4228,
+    "of_which_on_gpu_mb": 4228
+  }
+}

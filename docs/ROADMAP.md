@@ -207,7 +207,7 @@ not start until this is integrated, tested and documented.
   Python 3.12), packages installed, speech models downloaded.
 - First contact: Parakeet Unified, Parakeet TDT v2 and Kokoro all run on
   the Mac.
-- 97 core tests and 19 voice-worker tests pass.
+- 97 core tests and 19 voice-worker tests pass (`npm test`, and `uv run pytest` in `apps/voice`).
 
 **In progress / next, in order**
 
@@ -233,22 +233,23 @@ not start until this is integrated, tested and documented.
    a stop button while HELIOS speaks, the "think hard" option for the
    stronger model, and the model and reason under each answer. Checked in
    a browser against the real worker process with scripted engines.
-6. Next: the audition tool (write WAV files per voice, no playback at
-   night), benchmarks with one model per process (speech models, the local
-   model, both together), what training "Hey Helios" takes, and the
-   streaming Parakeet export for partial transcripts.
-7. Then: a first run with real audio devices. This needs the owner at the
-   Mac (microphone permission, and sound out loud).
-8. Finish AI-VOICE-STACK.md, update ARCHITECTURE.md, final report in the
-   format of the brief's section 11.
+6. Done: the audition tool (36 files written to the `voice-audition`
+   folder, nothing played), benchmarks with one model per process
+   (`docs/benchmarks/`), the streaming Parakeet export checked (it works,
+   not wired in), and what training "Hey Helios" takes (not done).
+7. Done: AI-VOICE-STACK.md and ARCHITECTURE.md.
+8. Open, needs the owner: a first run with a real microphone and real
+   speakers (microphone permission on the Mac, and sound out loud),
+   including the feedback test. One real call to Claude (needs a key).
+9. Open: wiring the streaming export in for words-as-you-speak, a download
+   command for the speech models, protected storage for the API key.
 
 **Not done / not verified**
 
 - Nothing has run on the Windows laptop.
-- No real model has answered yet: no API key exists, and the local model's
-  first run is pending.
-- No microphone or speaker has been used yet. Speech tests so far fed
-  synthesised audio straight to the recogniser.
+- No Claude call has been made: no API key exists. The local model works.
+- No microphone or speaker has been used yet. Speech tests fed synthesised
+  audio straight to the recogniser.
 
 **Practical notes for the next session**
 
