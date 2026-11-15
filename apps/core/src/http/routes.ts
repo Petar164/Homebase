@@ -1,10 +1,11 @@
-import { loginSchema, type Overview, type SessionInfo, type SnapshotSummary, type SystemStatus, taskCreateSchema, taskUpdateSchema } from "@homebase/shared";
+import { loginSchema, type Overview, saleSchema, type SessionInfo, type SnapshotSummary, stockSchema, type SystemStatus, taskCreateSchema, taskUpdateSchema } from "@homebase/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createSnapshot } from "../backup/snapshot.ts";
 import { BackupStore } from "../backup/store.ts";
 import { hasHomeBaseData, importExport } from "../domain/import.ts";
 import { buildOverview } from "../domain/overview.ts";
+import { createStockItem, deleteSale, deleteStockItem, listBuyers, listSales, listStock, saveSale, suggestInvoiceNumber, updateStockItem } from "../domain/sales.ts";
 import { createTask, deleteTask, listTasks, updateTask } from "../domain/tasks.ts";
 import { AppError } from "../errors.ts";
 import { summarise, systemStatus } from "../jobs/backups.ts";
@@ -108,6 +109,27 @@ export function registerRoutes(app: FastifyInstance, context: ServerContext): vo
   app.delete("/api/tasks/:id", async (request) => {
     const { id } = parse(idParams, request.params);
     deleteTask(db, id, "owner");
+    return { ok: true };
+  });
+
+  // ---------- sales, stock and buyers ----------
+
+  app.get("/api/stock", async () => listStock(db));
+  app.post("/api/stock", async (request, reply) => reply.code(201).send(createStockItem(db, parse(stockSchema, request.body))));
+  app.put("/api/stock/:id", async (request) => updateStockItem(db, parse(idParams, request.params).id, parse(stockSchema, request.body), "owner"));
+  app.delete("/api/stock/:id", async (request) => {
+    deleteStockItem(db, parse(idParams, request.params).id, "owner");
+    return { ok: true };
+  });
+
+  app.get("/api/buyers", async () => listBuyers(db));
+
+  app.get("/api/sales", async () => listSales(db));
+  app.get("/api/sales/next-invoice", async () => ({ invoice: suggestInvoiceNumber(db, new Date().getFullYear()) }));
+  app.post("/api/sales", async (request, reply) => reply.code(201).send(saveSale(db, parse(saleSchema, request.body), "owner")));
+  app.put("/api/sales/:id", async (request) => saveSale(db, parse(saleSchema, request.body), "owner", parse(idParams, request.params).id));
+  app.delete("/api/sales/:id", async (request) => {
+    deleteSale(db, parse(idParams, request.params).id, "owner");
     return { ok: true };
   });
 

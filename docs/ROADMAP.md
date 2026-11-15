@@ -199,7 +199,11 @@ can start without context.
   the cloud approval gate and cost cap, the event stream, the conversation
   on the screen, and connections to Claude and Ollama.
 - Phase 3, first piece: full-text search over past conversations, as a
-  HELIOS tool. 72 automated tests in total.
+  HELIOS tool.
+- Sales, stock and buyers in the core: one invoice number per sale for
+  ever, a stock item sold once, a sale complete only with every invoice
+  field, returning buyers recognised. API only, no screen yet.
+  76 automated tests in total.
 - A written plan for the first session on the laptop
   ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)).
 
@@ -215,10 +219,10 @@ can start without context.
 
 Does not need the owner:
 
-1. Sales logging in the standalone (stock list, a sale form that cannot be
-   completed without every invoice field, pasting an address), then the
-   training log and calendar entries. Their tables and import exist; the
-   API and screens do not.
+1. The sales screen (stock list, a sale form that shows what is still
+   missing, pasting an address), on top of the sales API that now exists.
+   Then the training log and calendar entries (tables and import exist;
+   API and screens do not).
 2. The importer for Claude conversation exports, written tolerantly and
    then checked against a real export.
 
