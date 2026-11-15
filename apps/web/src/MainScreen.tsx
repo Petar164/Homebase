@@ -1,12 +1,24 @@
-import { AREA_NAME, DAYS, type DayOverview, type Overview, relDay, type SystemStatus, type Task } from "@homebase/shared";
+import { AREA_NAME, DAYS, type DayOverview, type HeliosState, type HeliosStatus, type Overview, relDay, type SystemStatus, type Task } from "@homebase/shared";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "./api.ts";
 import { Brain } from "./components/Brain.tsx";
+import { Conversation } from "./components/Conversation.tsx";
 
 // The main screen: the brain in the middle, with what matters today around
 // it. Built for a TV across the room, so it shows a little, large.
 
 const OVERVIEW_SECONDS = 20;
+
+/** How each state is named on screen. */
+const STATE_LABEL: Record<HeliosState, string> = {
+  idle: "Idle",
+  listening: "Listening",
+  thinking: "Thinking",
+  searching: "Searching memory",
+  speaking: "Speaking",
+  acting: "Working",
+  presenting: "Presenting",
+};
 const STATUS_SECONDS = 60;
 
 function useNow(everyMs: number): Date {
@@ -33,6 +45,8 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [offline, setOffline] = useState(false);
+  const [heliosState, setHeliosState] = useState<HeliosState>("idle");
+  const [helios, setHelios] = useState<HeliosStatus | null>(null);
 
   const load = useCallback(
     async <T,>(path: string, set: (value: T) => void) => {
@@ -47,7 +61,19 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
     [onLoggedOut],
   );
   const loadOverview = useCallback(() => load<Overview>("/api/overview", setOverview), [load]);
-  const loadStatus = useCallback(() => load<SystemStatus>("/api/system/status", setStatus), [load]);
+  const loadStatus = useCallback(async () => {
+    await load<SystemStatus>("/api/system/status", setStatus);
+    await load<HeliosStatus>("/api/helios/status", setHelios);
+  }, [load]);
+
+  // When HELIOS finishes doing something, the numbers may have changed.
+  const onHeliosState = useCallback(
+    (state: HeliosState) => {
+      setHeliosState(state);
+      if (state === "idle") void loadOverview();
+    },
+    [loadOverview],
+  );
 
   useEffect(() => {
     void loadOverview();
@@ -79,7 +105,7 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
       {/* The glow behind the brain, and the brain itself, fill the screen. */}
       <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse 55% 60% at 50% 48%, rgba(43, 27, 61, 0.55), transparent 70%)" }} />
       <div className="pointer-events-none absolute inset-x-[14%] inset-y-[6%]">
-        <Brain state="idle" ambient={ambient} growth={0.05} />
+        <Brain state={heliosState} ambient={ambient} growth={0.05} />
       </div>
 
       {/* Everything else sits around it, inside margins that survive TV overscan. */}
@@ -93,10 +119,11 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
           <p className="label">Helios</p>
           <p className="mt-1 text-lg text-bone">
             <span className="mr-2 inline-block h-2 w-2 rounded-full bg-salmon align-middle" />
-            {offline ? "Core not answering" : "Idle"}
+            {offline ? "Core not answering" : STATE_LABEL[heliosState]}
           </p>
           {status && (
             <div className="mt-3 space-y-1 text-sm text-mute">
+              {helios && <ModelLine helios={helios} />}
               <p>
                 Last snapshot <span className="text-soft">{ago(status.snapshots.newestAt, now)}</span>
               </p>
@@ -121,6 +148,10 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
           {overview ? <Planning overview={overview} onComplete={complete} onAdded={loadOverview} /> : <p className="text-mute">Loading…</p>}
         </section>
 
+        <section className="col-start-2 row-start-2 min-h-0">
+          <Conversation onState={onHeliosState} onChanged={loadOverview} />
+        </section>
+
         <section className="col-start-3 row-start-2 mt-10 flex min-h-0 flex-col items-end gap-8 text-right">
           {overview && <Numbers overview={overview} />}
           <button type="button" onClick={logout} className="mt-auto text-xs tracking-widest text-mute uppercase hover:text-bone">
@@ -131,6 +162,27 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
         <footer className="col-span-3 row-start-3 mt-6">{overview && <Week days={overview.week} today={overview.today} />}</footer>
       </div>
     </div>
+  );
+}
+
+/** Which model would answer right now, and what the cloud has cost this month. */
+function ModelLine({ helios }: { helios: HeliosStatus }) {
+  const real = helios.models.filter((model) => model.id !== "standin" && model.available);
+  const usesCloud = real.some((model) => model.location === "cloud");
+  return (
+    <>
+      <p>
+        Model <span className={real.length > 0 ? "text-soft" : "text-salmon/80"}>{real.length > 0 ? real.map((model) => model.model).join(", ") : "none connected (stand-in)"}</span>
+      </p>
+      {usesCloud && (
+        <p>
+          Cloud this month{" "}
+          <span className="text-soft">
+            ${helios.cloudSpendUsd.toFixed(2)} of ${helios.cloudCapUsd.toFixed(0)}
+          </span>
+        </p>
+      )}
+    </>
   );
 }
 
