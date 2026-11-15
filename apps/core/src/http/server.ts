@@ -1,10 +1,15 @@
 import { existsSync } from "node:fs";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
+import { Helios } from "../ai/helios.ts";
+import { StandInProvider } from "../ai/standin.ts";
+import type { ModelProvider } from "../ai/types.ts";
 import { AppError } from "../errors.ts";
+import { EventBus } from "../events.ts";
 import type { Instance } from "../instance.ts";
 import { findSession, readCookie, SESSION_COOKIE, type Session } from "../security/sessions.ts";
 import type { Logger } from "../util.ts";
+import { registerHeliosRoutes } from "./heliosRoutes.ts";
 import { registerRoutes } from "./routes.ts";
 
 // The HTTP layer. Four rules are enforced here, in one place, for every
@@ -22,6 +27,8 @@ export type ServerContext = {
   webDir?: string;
   /** Extra host names to accept, used by the development server. */
   extraHosts?: string[];
+  /** The models HELIOS may use. Without any, a rule-based stand-in answers. */
+  providers?: ModelProvider[];
 };
 
 declare module "fastify" {
@@ -47,10 +54,14 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Permissions-Policy": "camera=(), geolocation=(), payment=()",
 };
 
-export async function buildServer(context: ServerContext): Promise<{ app: FastifyInstance; routes: string[] }> {
+export async function buildServer(context: ServerContext): Promise<{ app: FastifyInstance; routes: string[]; helios: Helios; bus: EventBus }> {
   const { instance, log } = context;
   const { port } = instance.config.http;
-  const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
+  // forceCloseConnections: the event stream stays open for as long as the
+  // screen is showing; shutting down must not wait for it.
+  const app = Fastify({ logger: false, bodyLimit: 1024 * 1024, forceCloseConnections: true });
+  const bus = new EventBus();
+  const helios = new Helios({ instance, providers: context.providers ?? [new StandInProvider()], bus, log });
   const routes: string[] = [];
 
   const allowedHosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, ...(context.extraHosts ?? [])]);
@@ -105,6 +116,7 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
   });
 
   registerRoutes(app, context);
+  registerHeliosRoutes(app, helios, bus);
 
   const webDir = context.webDir && existsSync(context.webDir) ? context.webDir : null;
   // Files are looked up on each request, so a rebuilt screen is served
@@ -120,7 +132,7 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
   });
 
   await app.ready();
-  return { app, routes };
+  return { app, routes, helios, bus };
 }
 
 /** For routes that need step-up authentication (see docs/SECURITY.md). */

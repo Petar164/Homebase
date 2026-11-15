@@ -31,6 +31,33 @@ const configSchema = z.object({
         .prefault({}),
     })
     .prefault({}),
+  ai: z
+    .object({
+      /** "auto": a local model when one is running, otherwise the cloud. */
+      prefer: z.enum(["auto", "local", "cloud"]).default("auto"),
+      /** When true, small reversible changes (tier 1) run without asking. */
+      autoApproveTier1: z.boolean().default(false),
+      cloud: z
+        .object({
+          model: z.string().default("claude-opus-5-5"),
+          /** Hard stop for cloud spending per calendar month, in US dollars. */
+          monthlyCapUsd: z.number().min(0).default(10),
+          /** Prices in US dollars per million tokens, used to track spending. */
+          pricePerMTok: z
+            .record(z.string(), z.object({ input: z.number().min(0), output: z.number().min(0) }))
+            .default({ "claude-opus-5-5": { input: 4, output: 20 }, "claude-haiku-5-5": { input: 0.1, output: 0.5 } }),
+        })
+        .prefault({}),
+      local: z
+        .object({
+          /** Where Ollama listens. */
+          baseUrl: z.string().default("http://127.0.0.1:11434"),
+          /** The local model to use. Empty means: no local model set up. */
+          model: z.string().default(""),
+        })
+        .prefault({}),
+    })
+    .prefault({}),
 });
 
 export type Config = z.infer<typeof configSchema>;

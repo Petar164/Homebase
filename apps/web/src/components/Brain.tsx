@@ -1,3 +1,4 @@
+import type { HeliosState } from "@homebase/shared";
 import { useEffect, useRef } from "react";
 
 // The centrepiece: a slowly turning neural structure drawn on a canvas.
@@ -7,7 +8,6 @@ import { useEffect, useRef } from "react";
 // contract stays the same: the core says which state HELIOS is in, and the
 // brain shows it. Nothing here decides anything.
 
-export type HeliosState = "idle" | "listening" | "thinking" | "searching" | "speaking" | "acting" | "presenting";
 
 /** How each state looks: turning speed (radians per second) and signals per second. */
 const ACTIVITY: Record<HeliosState, { spin: number; signals: number }> = {

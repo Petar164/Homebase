@@ -45,3 +45,60 @@ export type SystemStatus = {
 };
 
 export type SnapshotSummary = { id: string; createdAt: string; kind: string; note: string; schemaVersion: number; files: number; bytes: number };
+
+// ---------- HELIOS ----------
+
+/** What HELIOS is doing right now. The screen and the brain follow this. */
+export const HELIOS_STATES = ["idle", "listening", "thinking", "searching", "speaking", "acting", "presenting"] as const;
+export type HeliosState = (typeof HELIOS_STATES)[number];
+
+export type ConversationSummary = { id: string; title: string; channel: "text" | "voice"; startedAt: string; lastMessageAt: string };
+
+/** One line of a transcript, as the screen shows it. Tool traffic is left out. */
+export type ConversationMessage = {
+  id: string;
+  seq: number;
+  role: "user" | "assistant" | "system";
+  text: string;
+  createdAt: string;
+  /** Which model answered, for assistant messages. */
+  model: string | null;
+};
+
+/** A yes HELIOS is waiting for. */
+export type Approval = {
+  id: string;
+  kind: "tool" | "cloud_egress";
+  /** 3 means the password has to be confirmed first. */
+  tier: number;
+  summary: string;
+  /** For cloud approvals: what would be sent, message by message. */
+  preview: { role: string; sensitivity: string; excerpt: string }[];
+  conversationId: string | null;
+  status: "pending" | "approved" | "denied" | "expired";
+  requestedAt: string;
+  expiresAt: string;
+};
+
+export type HeliosStatus = {
+  state: HeliosState;
+  /** The models HELIOS could use, in the order it would try them. */
+  models: { id: string; model: string; location: "local" | "cloud"; available: boolean }[];
+  /** Cloud spending this calendar month, and the cap, in US dollars. */
+  cloudSpendUsd: number;
+  cloudCapUsd: number;
+};
+
+export type TurnResult = {
+  conversationId: string;
+  /** Everything added to the transcript by this turn, in order. */
+  messages: ConversationMessage[];
+  approvals: Approval[];
+};
+
+/** What the core pushes to the screen over the event stream. */
+export type CoreEvent =
+  | { type: "state"; state: HeliosState }
+  | { type: "message"; conversationId: string; message: ConversationMessage }
+  | { type: "delta"; conversationId: string; text: string }
+  | { type: "approval"; approval: Approval };
