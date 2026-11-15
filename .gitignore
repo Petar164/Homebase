@@ -5,13 +5,15 @@
 .env.*
 !.env.example
 *.pem
-.vercel/
 
-# 2. Real data: anything real (exports, imports, backups) goes in /private
+# 2. Real data never lives in this folder at all (see docs/PERSISTENCE.md).
+#    These rules are a second line of defence in case some ends up here.
 /private/
 *.db
 *.sqlite
 *.sqlite3
+*.sqlite-wal
+*.sqlite-shm
 *.dump
 *.bak
 *.csv
@@ -23,10 +25,8 @@
 
 # 4. Generated files: rebuilt by npm, no reason to store them
 node_modules/
-.next/
-out/
+dist/
 coverage/
-next-env.d.ts
 *.tsbuildinfo
 npm-debug.log*
 
