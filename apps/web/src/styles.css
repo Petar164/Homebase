@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* The palette: near-black, greys and off-white, with two quiet accents.
+   No neon anywhere. */
+@theme {
+  --color-void: #060608;
+  --color-ink: #0e0d12;
+  --color-line: #25222d;
+  --color-mute: #7f7a89;
+  --color-soft: #b8b3bd;
+  --color-bone: #ece8e2;
+  --color-plum: #2b1b3d;
+  --color-salmon: #f1d2c6;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+}
+
+/* Everything is sized in rem, and rem follows the width of the screen, so
+   the layout reads the same on a laptop and on a TV across the room. */
+html {
+  font-size: clamp(14px, 1.25vw, 52px);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-void);
+  color: var(--color-bone);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* After 21:00 the screen dims and calms down. */
+.ambient {
+  filter: brightness(0.62) saturate(0.8);
+}
+.screen {
+  transition: filter 4s ease;
+}
+
+.label {
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-mute);
+}
+
+/* Static elements drift by a few pixels over minutes, which protects TV
+   panels from burn-in without being noticeable. */
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(3px, -2px); }
+  50% { transform: translate(-2px, 3px); }
+  75% { transform: translate(-3px, -3px); }
+}
+.drift {
+  animation: drift 600s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drift { animation: none; }
+  .screen { transition: none; }
+}

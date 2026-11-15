@@ -107,7 +107,9 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
   registerRoutes(app, context);
 
   const webDir = context.webDir && existsSync(context.webDir) ? context.webDir : null;
-  if (webDir) await app.register(fastifyStatic, { root: webDir, wildcard: false });
+  // Files are looked up on each request, so a rebuilt screen is served
+  // without restarting the core.
+  if (webDir) await app.register(fastifyStatic, { root: webDir });
 
   app.setNotFoundHandler((request, reply) => {
     if (request.url.startsWith("/api/")) return reply.code(404).send({ error: "There is nothing at this address." });

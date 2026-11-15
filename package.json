@@ -8,6 +8,7 @@
   },
   "workspaces": [
     "apps/core",
+    "apps/web",
     "packages/shared"
   ],
   "scripts": {
@@ -15,7 +16,9 @@
     "dev": "node --env-file-if-exists=.env --watch apps/core/src/main.ts",
     "homebase": "node --env-file-if-exists=.env apps/core/src/cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p packages/shared && tsc -p apps/core"
+    "typecheck": "tsc -p packages/shared && tsc -p apps/core && tsc -p apps/web",
+    "build": "npm run build -w @homebase/web",
+    "dev:web": "npm run dev -w @homebase/web"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
