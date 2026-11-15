@@ -7,6 +7,7 @@ import { audit } from "../security/audit.ts";
 import type { Session } from "../security/sessions.ts";
 import { type Logger, newId } from "../util.ts";
 import { budgetStatus, chooseProvider, classifyRequest, costMicros, estimateMicros, recordEgress, reserve, settle, settleAbandoned, type Task, warningDue } from "./policy.ts";
+import { looksLikeSecret } from "./secrets.ts";
 import { findTool, toolSpecs } from "./tools.ts";
 import { type ChatMessage, type ChatResponse, maxSensitivity, type ModelProvider, SENSITIVITY, type Sensitivity, type ToolCall, type ToolResult } from "./types.ts";
 
@@ -259,6 +260,13 @@ export class Helios {
         this.db.prepare("INSERT INTO conversations (id, channel, started_at, last_message_at) VALUES (?, ?, ?, ?)").run(conversationId, options.channel ?? "text", now, now);
       }
       this.noteDate(conversationId);
+      if (looksLikeSecret(text)) {
+        // Stored, labelled secret, and not passed to any model: there is
+        // nothing a model could do with it that is worth the exposure.
+        const kept = this.append(conversationId, { role: "user", text, sensitivity: "secret" });
+        this.append(conversationId, { role: "system", text: "That looked like a password or a key. I stored it marked secret and did not pass it to any model.", sensitivity: "normal" });
+        return { conversationId, messages: this.messages(conversationId).filter((entry) => entry.seq >= kept.seq), approvals: [] };
+      }
       const message = this.append(conversationId, { role: "user", text, sensitivity: "private" });
       return await this.run(conversationId, message.seq - 1, classifyRequest(text, this.instance.config, options.reasoning));
     } finally {
@@ -427,7 +435,7 @@ export class Helios {
     }
 
     try {
-      const ran = tool.run(parsed.data, { db: this.db, now: this.now(), conversationId });
+      const ran = tool.run(parsed.data, { db: this.db, config: this.instance.config, now: this.now(), conversationId });
       const output = typeof ran === "string" ? ran : ran.output;
       audit(this.db, { actor: "helios", action: "tool.run", target: tool.name, detail: { tier: tool.tier } });
       return { result: { id: call.id, name: call.name, output, isError: false }, sensitivity: typeof ran === "string" ? tool.sensitivity : ran.sensitivity };
@@ -523,7 +531,7 @@ export class Helios {
       let ok = false;
       if (tool && parsed?.success) {
         try {
-          const ran = tool.run(parsed.data, { db: this.db, now: this.now(), conversationId: conversationId ?? "" });
+          const ran = tool.run(parsed.data, { db: this.db, config: this.instance.config, now: this.now(), conversationId: conversationId ?? "" });
           result = typeof ran === "string" ? ran : ran.output;
           ok = true;
         } catch (error) {

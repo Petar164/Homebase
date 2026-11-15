@@ -372,17 +372,53 @@ describe("when a model fails", () => {
   });
 });
 
+describe("asking which model answered", () => {
+  it("reports the model, the reason and the spending, from what was recorded", async () => {
+    const local = new ScriptedProvider("local", "local", [
+      { text: "Two things are due." },
+      { toolCalls: [call("get_answer_info", {})] },
+      { text: "That was the local model." },
+    ]);
+    const { helios } = await setup([local]);
+    const { conversationId } = await helios.handleMessage("What is due?");
+    await helios.handleMessage("Which model answered that?", { conversationId });
+    const info = JSON.parse((local.requests.at(-1)?.messages.at(-1) as { results: { output: string }[] }).results[0]?.output as string);
+    expect(info.recentAnswers[0]).toMatchObject({ model: "local-model", ranOn: "this machine", chosenBecause: "an ordinary request" });
+    expect(info.cloudThisMonth).toMatchObject({ spentEur: 0, warnAtEur: 15, limitEur: 20, state: "ok" });
+  });
+});
+
 describe("secrets", () => {
+  it("does not pass something that looks like a password or key to any model", async () => {
+    const { looksLikeSecret } = await import("../src/ai/secrets.ts");
+    expect(looksLikeSecret("my password is hunter2-example")).toBe(true);
+    expect(looksLikeSecret("the alarm code is 4417")).toBe(true);
+    expect(looksLikeSecret("here: sk-test-0000000000000000000000")).toBe(true);
+    expect(looksLikeSecret("-----BEGIN OPENSSH PRIVATE KEY-----")).toBe(true);
+    expect(looksLikeSecret("What is due this week?")).toBe(false);
+    expect(looksLikeSecret("Remind me to change my password")).toBe(false);
+
+    const local = new ScriptedProvider("local", "local", [{ text: "noted" }]);
+    const { instance, helios } = await setup([local]);
+    const turn = await helios.handleMessage("my password is hunter2-example");
+    expect(local.requests).toHaveLength(0);
+    expect(turn.messages.at(-1)).toMatchObject({ role: "system", text: expect.stringContaining("marked secret") });
+    expect(instance.db.prepare("SELECT sensitivity FROM messages WHERE role = 'user'").get()).toEqual({ sensitivity: "secret" });
+    // Later turns in the same conversation still never show it to a model.
+    await helios.handleMessage("What is due?", { conversationId: turn.conversationId });
+    expect(JSON.stringify(local.requests[0]?.messages)).not.toContain("hunter2");
+  });
+
   it("withholds anything labelled secret from every model, local ones included", async () => {
     const local = new ScriptedProvider("local", "local", [{ text: "first" }, { text: "second" }]);
     const { instance, helios } = await setup([local]);
-    const { conversationId } = await helios.handleMessage("The alarm code is 4417");
-    // The owner (or a detector) marks that message secret afterwards.
+    const { conversationId } = await helios.handleMessage("The surprise is a trip to the coast");
+    // The owner marks that message secret afterwards.
     instance.db.exec("DROP TRIGGER messages_no_update");
     instance.db.prepare("UPDATE messages SET sensitivity = 'secret' WHERE role = 'user'").run();
     await helios.handleMessage("What did I just tell you?", { conversationId });
     const sent = JSON.stringify(local.requests[1]?.messages);
-    expect(sent).not.toContain("4417");
+    expect(sent).not.toContain("trip to the coast");
     expect(sent).toContain("[withheld: marked secret]");
   });
 });

@@ -1,9 +1,11 @@
 import { addDays, AREA_NAME, taskCreateSchema, ymd } from "@homebase/shared";
 import { z } from "zod";
+import type { Config } from "../config.ts";
 import type { Db } from "../db/open.ts";
 import { buildOverview } from "../domain/overview.ts";
 import { createTask, listTasks, updateTask } from "../domain/tasks.ts";
 import { hitsSensitivity, searchConversations } from "./memory.ts";
+import { budgetStatus } from "./policy.ts";
 import type { Sensitivity, ToolSpec } from "./types.ts";
 
 // What HELIOS can do. A model never touches the database: it can only ask
@@ -31,7 +33,7 @@ export type Tool<Input = unknown> = {
   /** One line shown to the owner when a yes is needed. */
   describe(input: Input): string;
   /** Returns the output, or the output with its own label when that depends on what was found. */
-  run(input: Input, context: { db: Db; now: Date; conversationId: string }): string | { output: string; sensitivity: Sensitivity };
+  run(input: Input, context: { db: Db; config: Config; now: Date; conversationId: string }): string | { output: string; sensitivity: Sensitivity };
 };
 
 function define<Input>(tool: Tool<Input>): Tool {
@@ -136,6 +138,27 @@ export const TOOLS: Tool[] = [
       const hits = searchConversations(db, input.query, { excludeConversationId: conversationId });
       const output = JSON.stringify(hits.map((hit) => ({ when: hit.at.slice(0, 10), conversation: hit.conversationTitle, saidBy: hit.role === "user" ? "owner" : "HELIOS", passage: hit.snippet })));
       return { output, sensitivity: hitsSensitivity(hits) };
+    },
+  }),
+
+  define({
+    name: "get_answer_info",
+    description:
+      "Which model wrote HELIOS's recent answers in this conversation and why it was chosen, plus this month's cloud spending against its limit. " +
+      "Use it when the owner asks which model answered, why, or what the cloud has cost.",
+    tier: 0,
+    sensitivity: "normal",
+    input: z.object({}),
+    describe: () => "Look up which model answered",
+    run(_input, { db, config, now, conversationId }) {
+      const answers = db
+        .prepare("SELECT model, provider, route_reason, created_at FROM messages WHERE conversation_id = ? AND role = 'assistant' AND text != '' ORDER BY seq DESC LIMIT 3")
+        .all(conversationId) as { model: string | null; provider: string | null; route_reason: string | null; created_at: string }[];
+      const budget = budgetStatus(db, config, now);
+      return JSON.stringify({
+        recentAnswers: answers.map((answer) => ({ model: answer.model, ranOn: answer.provider?.startsWith("claude") ? "the cloud" : "this machine", chosenBecause: answer.route_reason, at: answer.created_at })),
+        cloudThisMonth: { spentEur: Number((budget.spentEur + budget.reservedEur).toFixed(4)), warnAtEur: budget.warnEur, limitEur: budget.capEur, state: budget.state },
+      });
     },
   }),
 

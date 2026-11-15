@@ -57,6 +57,12 @@ function describe(result: ToolResult): string {
     if (hits.length === 0) return "I found nothing about that in earlier conversations.";
     return `I found ${hits.length}: ${hits.slice(0, 3).map((hit) => `on ${hit.when}, "${hit.passage}"`).join("; ")}`;
   }
+  if (result.name === "get_answer_info") {
+    const last = (data.recentAnswers as { model: string | null; ranOn: string; chosenBecause: string | null }[] | undefined)?.[0];
+    const cloud = data.cloudThisMonth as { spentEur: number; limitEur: number };
+    const answered = last ? `The last answer came from ${last.model ?? "an unknown model"}, on ${last.ranOn}, because ${last.chosenBecause ?? "no reason was recorded"}.` : "Nothing has been answered in this conversation yet.";
+    return `${answered} Cloud spending this month is €${cloud.spentEur.toFixed(2)} of €${cloud.limitEur}.`;
+  }
   if (result.name === "get_money_summary") {
     const sales = data.sales as { count: number; revenue: string; costOfGoods: string };
     return `In ${String(data.month)}: ${sales.count} sale(s), revenue ${sales.revenue}, cost of goods ${sales.costOfGoods}. Other money in ${String(data.otherMoneyIn)}, out ${String(data.otherMoneyOut)}.`;
@@ -101,6 +107,7 @@ export class StandInProvider implements ModelProvider {
     if (add?.[1]) return use("add_task", { title: add[1].replace(/[.!]+$/, ""), area: "inbox" });
     const recall = /^(?:what did (?:i|we) say about|search(?: for)?|find|do you remember)\s+(.+?)\??$/i.exec(text);
     if (recall?.[1]) return use("search_conversations", { query: recall[1] });
+    if (/\b(which|what) model\b|\bcloud (cost|spend|spending|budget)\b/.test(lower)) return use("get_answer_info", {});
     if (/\b(money|revenue|sales|profit|earned)\b/.test(lower)) return use("get_money_summary", { month: new Date().toISOString().slice(0, 7) });
     if (/\b(list|show|which)\b.*\btasks?\b/.test(lower)) return use("list_tasks", { show: /\blate\b/.test(lower) ? "late" : "open" });
     if (/\b(due|late|today|this week|focus|next|overview|status|should i do)\b/.test(lower)) return use("get_overview", {});
