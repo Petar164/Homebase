@@ -8,7 +8,7 @@ import time
 import numpy as np
 import pytest
 
-from helios_voice.audio import SAMPLE_RATE, MockAudioBackend
+from helios_voice.audio import SAMPLE_RATE, AudioUnavailable, MockAudioBackend, run_with_timeout
 from helios_voice.engines import FakeStt, FakeTts, FakeWake, split_sentences
 from helios_voice.protocol import Channel
 from helios_voice.worker import Worker
@@ -217,3 +217,19 @@ def test_no_words_reach_the_log(capsys):
     logged = capsys.readouterr().err
     assert "transcribed 2000 ms" in logged
     assert "private" not in logged and "confidential" not in logged
+
+
+def test_an_audio_system_that_does_not_answer_cannot_freeze_the_worker():
+    closed = []
+
+    def waiting_for_permission():
+        time.sleep(0.3)  # the system dialog is still open
+        return "a stream opened too late"
+
+    started = time.monotonic()
+    with pytest.raises(AudioUnavailable):
+        run_with_timeout(waiting_for_permission, 0.05, closed.append)
+    assert time.monotonic() - started < 0.2  # gave up quickly
+    time.sleep(0.4)
+    assert closed == ["a stream opened too late"]  # and what opened afterwards was closed again
+    assert run_with_timeout(lambda: "in time", 1.0) == "in time"

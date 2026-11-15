@@ -20,6 +20,35 @@ class AudioUnavailable(Exception):
     """The microphone or the speaker could not be opened or stopped working."""
 
 
+def run_with_timeout(work: Callable[[], object], seconds: float, on_late: Callable[[object], None] | None = None):
+    """Runs `work` on another thread and gives up waiting after `seconds`.
+
+    Opening a microphone can block for as long as the operating system is
+    waiting for the owner to answer its "allow microphone?" dialog. Without
+    this, that wait would freeze the whole worker. If the work does finish
+    later, `on_late` gets its result, so whatever it opened can be closed.
+    """
+    box: dict = {}
+    done, abandoned = threading.Event(), threading.Event()
+
+    def target() -> None:
+        try:
+            box["value"] = work()
+        except Exception as error:
+            box["error"] = error
+        done.set()
+        if abandoned.is_set() and "value" in box and on_late is not None:
+            on_late(box["value"])
+
+    threading.Thread(target=target, name="audio-open", daemon=True).start()
+    if not done.wait(seconds):
+        abandoned.set()
+        raise AudioUnavailable("no answer from the audio system (is microphone access allowed?)")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
+
+
 class AudioBackend(Protocol):
     def devices(self) -> dict: ...
 
@@ -63,9 +92,20 @@ class SoundDeviceBackend:
         def callback(indata, _frames, _time, _status) -> None:
             on_chunk(indata[:, 0].copy())
 
+        def open_stream():
+            stream = self._sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=BLOCK, device=device, callback=callback)
+            stream.start()
+            return stream
+
+        def close_late(stream) -> None:
+            stream.stop()
+            stream.close()
+
         try:
-            self._input = self._sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=BLOCK, device=device, callback=callback)
-            self._input.start()
+            self._input = run_with_timeout(open_stream, 5.0, close_late)
+        except AudioUnavailable:
+            self._input = None
+            raise
         except Exception as error:
             self._input = None
             raise AudioUnavailable(type(error).__name__) from error

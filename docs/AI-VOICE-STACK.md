@@ -62,9 +62,13 @@ They cover each acceptance point of the brief:
 
 **Not tested, and why:**
 
-- **A real microphone and real speakers.** Recording needs the owner to
-  allow microphone access in a macOS dialog, and playing speech out loud
-  was not done unattended at night. So room acoustics, the speaker-to-
+- **A real microphone and real speakers.** The worker lists the Mac's
+  devices correctly (two microphones, two speakers). Opening the
+  microphone did not return: macOS was waiting for an answer to its
+  permission dialog, and nobody was there to give it. (That exposed a
+  weakness, now fixed and tested: the worker gives up after five seconds
+  and reports it, instead of freezing.) Speech was not played out loud
+  unattended at night. So recording, room acoustics, the speaker-to-
   microphone feedback test and echo cancellation are all still open.
 - **Claude.** No API key exists on this machine.
 - **Everything on Windows.**
