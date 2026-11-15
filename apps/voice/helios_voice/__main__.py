@@ -20,7 +20,10 @@ def build(args: argparse.Namespace, channel: Channel) -> Worker:
         from .audio import MockAudioBackend
         from .engines import FakeStt, FakeTts, FakeWake
 
-        return Worker(channel, MockAudioBackend(), FakeStt, FakeTts, None, FakeWake)
+        audio = MockAudioBackend()
+        audio.auto_feed_seconds = 1.0  # so a press of the talk button produces the scripted sentence
+        audio.play_seconds = 0.8  # and an answer takes a moment to "say"
+        return Worker(channel, audio, FakeStt, FakeTts, None, FakeWake)
 
     from .audio import SoundDeviceBackend
     from .engines import KokoroTts, OpenWakeWord, ParakeetStt, SileroVad

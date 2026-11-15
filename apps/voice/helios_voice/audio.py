@@ -102,6 +102,7 @@ class MockAudioBackend:
         self.fail_input = False
         self.fail_output = False
         self.play_seconds = 0.0  # pretend playback takes this long per call
+        self.auto_feed_seconds = 0.0  # when set, opening the microphone "hears" this much silence at once
         self._on_chunk: Callable[[np.ndarray], None] | None = None
         self.playing = threading.Event()
 
@@ -113,6 +114,8 @@ class MockAudioBackend:
             raise AudioUnavailable("MockDeviceMissing")
         self._on_chunk = on_chunk
         self.input_open = True
+        if self.auto_feed_seconds > 0:
+            self.feed(np.zeros(int(self.auto_feed_seconds * SAMPLE_RATE), dtype=np.float32))
 
     def close_input(self) -> None:
         self._on_chunk = None

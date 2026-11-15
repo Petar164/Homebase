@@ -229,11 +229,11 @@ not start until this is integrated, tested and documented.
    supervisor with restarts, speech into a normal conversation turn,
    answers spoken as they are written, voice routes, combined state.
    Checked across the process boundary with the real Python worker.
-5. Next: push-to-talk and voice status on the screen
-   (`apps/web/src/components/Conversation.tsx`): hold a button to talk,
-   stop speaking, the "use the stronger model" option
-   (`reasoning: "strong"` on `/api/helios/message`).
-6. Then: the audition tool (write WAV files per voice, no playback at
+5. Done: push-to-talk on the screen (hold the button or the space bar),
+   a stop button while HELIOS speaks, the "think hard" option for the
+   stronger model, and the model and reason under each answer. Checked in
+   a browser against the real worker process with scripted engines.
+6. Next: the audition tool (write WAV files per voice, no playback at
    night), benchmarks with one model per process (speech models, the local
    model, both together), what training "Hey Helios" takes, and the
    streaming Parakeet export for partial transcripts.
