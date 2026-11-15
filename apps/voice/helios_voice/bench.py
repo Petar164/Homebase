@@ -167,17 +167,17 @@ def child_stream(clips_path: str) -> dict:
     """The streaming export of Parakeet Unified: does it run, and when do the first words arrive?"""
     import sherpa_onnx
 
-    from .engines import models_dir
+    from .models import checked, models_dir
 
     clips = np.load(clips_path)
     folder = models_dir() / "stt" / "sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-streaming-560ms"
     before = rss_mb()
     recognizer, load_ms = timed(
         lambda: sherpa_onnx.OnlineRecognizer.from_transducer(
-            tokens=str(folder / "tokens.txt"),
-            encoder=str(folder / "encoder.int8.onnx"),
-            decoder=str(folder / "decoder.int8.onnx"),
-            joiner=str(folder / "joiner.int8.onnx"),
+            tokens=checked(folder / "tokens.txt"),
+            encoder=checked(folder / "encoder.int8.onnx"),
+            decoder=checked(folder / "decoder.int8.onnx"),
+            joiner=checked(folder / "joiner.int8.onnx"),
             num_threads=4,
             sample_rate=SAMPLE_RATE,
             feature_dim=80,

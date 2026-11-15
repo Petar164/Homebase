@@ -67,7 +67,22 @@ These change Windows settings, so each one is the owner's decision.
 | Ask "What is due this week?" | A real answer, from the real tasks. If the tool request fails, note the exact error: the Ollama connection was written without a running Ollama |
 | Watch GPU memory in Task Manager while it answers | Note the peak, for choosing speech models later |
 
-## 7. Report back
+## 7. Speech (the AI and voice stack)
+
+The order of the measurements that follow these steps is in
+[AI-VOICE-STACK.md](AI-VOICE-STACK.md), under "Pending on the Windows
+laptop".
+
+| Step | Check |
+|---|---|
+| Install uv (astral.sh/uv). In `apps\voice`: `uv sync --extra wake` | It installs Python 3.12 and the speech packages without errors |
+| `uv run pytest` | All tests pass. The ones that need the real models are reported as skipped |
+| `uv run python -m helios_voice.models download --all` (about 1,850 MB) | Each download is followed by "installed" and the last line says everything asked for is installed. A "NOT installed" line gives the reason; nothing unverified was put in place, and the command can be run again |
+| `uv run python -m helios_voice.models verify` | "Everything HELIOS needs is installed, and every installed file matches the model list." |
+| `uv run pytest` again | All tests pass and none are skipped |
+| In `config.json` in the data folder set `"voice": { "enabled": true }` and restart the core | A "Hold to talk" button appears on the screen |
+
+## 8. Report back
 
 Write down what failed and what was changed, and update "Where the work
 stands" in [ROADMAP.md](ROADMAP.md). Risks 1, 2, 5 and 8 in the roadmap are

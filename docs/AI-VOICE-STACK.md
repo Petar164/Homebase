@@ -6,7 +6,7 @@ actually been tested. This page keeps three things apart on purpose:
 run**, and **pending on the Windows laptop** (the machine HELIOS will live
 on). There is no Windows result on this page.
 
-Status: built on the branch `feature/ai-voice-stack`. Measurements are from
+Status: built and merged into `main`. Measurements are from
 15 November 2026 on an Apple M5 Max with 48 GB of memory. The raw numbers
 are in [benchmarks/2026-11-15-mac-m5-max.json](benchmarks/2026-11-15-mac-m5-max.json).
 
@@ -31,7 +31,7 @@ provider is another small file.
 
 ## What was actually tested
 
-**Automated tests: 97 in the core, 19 in the voice worker, all passing.**
+**Automated tests: 98 in the core, 54 in the voice worker, all passing.**
 They cover each acceptance point of the brief:
 
 | # | Requirement | Where it is tested |
@@ -45,7 +45,18 @@ They cover each acceptance point of the brief:
 | 7 | Speech can be interrupted | `apps/voice/tests`: "speech can be stopped at once", "pressing talk interrupts helios" |
 | 8 | A voice-worker failure does not stop the core | `voice.test.ts`: "is started again with growing pauses, then left off, and the core keeps answering" |
 | 9 | No words, tokens or audio in logs | "logs none of the words" (core), "no words reach the log" (worker) |
-| 10 | Earlier tests still pass | all 97 |
+| 10 | Earlier tests still pass | all of the core's tests |
+
+Added after the brief, in `apps/voice/tests/test_models.py`: the model
+files. A download that differs from the recorded file in content or size,
+or that breaks off, installs nothing. An archive cannot place a file
+anywhere but the listed places. A changed file is found and replaced. Every
+file each engine loads is compared with the list before the speech library
+sees it. These tests use a web server on the machine itself; none of them
+reaches the internet. Each of these protections was also switched off once,
+one at a time, to confirm that a test then fails. And in the core
+(`voice.test.ts`, "starts the worker without the cloud key"): the worker
+is not handed the Claude key.
 
 **Real runs on the Mac:**
 
@@ -59,9 +70,22 @@ They cover each acceptance point of the brief:
   transcribed it word for word.
 - The core's real child-process connection to the real Python worker.
 - Push-to-talk in a browser against that worker (with scripted engines).
+- The model commands on a copy of the installed models: `download` found
+  everything in place and fetched nothing; with one byte changed in the
+  speech detector, `verify` named the file and the real engine refused to
+  load it; with a file removed, the engine named the command that fetches
+  it.
+- One real download of every set (`download --all`) from the release
+  pages into an empty scratch folder: ten downloads, 1,846 MB, a little
+  over six minutes on the connection used. Every download and every
+  archive member matched the list. `verify` passed, the 19 files were
+  byte for byte the installed ones, and nothing else was left in the
+  folder. All 54 voice tests then passed on the downloaded files, and the
+  two sets the tests do not load (the full-precision voice and the
+  streaming recogniser) were run by hand: one synthesised a sentence and
+  the other transcribed it word for word.
 
 **Not tested, and why:**
-
 - **A real microphone and real speakers.** The worker lists the Mac's
   devices correctly (two microphones, two speakers). Opening the
   microphone did not return: macOS was waiting for an answer to its
@@ -110,6 +134,14 @@ and both models loaded together took 2,201 MB.
 
 The stock wake model scored 0.999 on its own phrase, also with noise, and
 0.0 on all ten other sentences.
+
+The "Loads in" figures were taken before model files were checked on
+loading. The check hashes each file first. Measured afterwards on the same
+Mac, in fresh processes, five runs each, without and with the check:
+Parakeet Unified 0.66 s and 0.88 s, Kokoro int8 0.16 s and 0.20 s, Silero
+VAD 0.01 s either way. (That comparison does not count importing the
+speech libraries, so its figures are not the table's.) The extra time is
+paid once per start of the worker, the first time each model is used.
 
 **What this suggests for the laptop, to be checked there:** the speech
 models need about 2.5 GB of ordinary memory and no GPU memory, which
@@ -199,7 +231,11 @@ set there too, as a second lock.
   that arrives right after speaking and matches what HELIOS just said is
   dropped. Real echo cancellation is not built: it needs the speaker signal
   as a reference, and is to be judged on the laptop with the TV speakers.
-- Models load the first time they are needed.
+- Models load the first time they are needed. Each model file is compared
+  with the recorded one first (see "Where models come from" below).
+- The worker is started without the cloud key. It never calls a cloud
+  model, and speech libraries from other projects run inside it, so the
+  core does not pass `ANTHROPIC_API_KEY` on to it.
 - A missing microphone, a broken speaker or a model that will not load is
   reported and survived. If the worker dies, the core restarts it after 1,
   2, 5, 15 and 30 seconds, then leaves it off and says so. The core, the
@@ -234,8 +270,64 @@ tested, push-to-talk is the way to talk to HELIOS.
 
 Speech models are downloaded from the projects' own release pages into the
 `models` folder of the data folder (never the repository, and not part of
-snapshots, because they can be downloaded again). A SHA-256 of every
-downloaded file is recorded in `SHA256SUMS` there.
+snapshots, because they can be downloaded again).
+
+**The list.** `apps/voice/helios_voice/models.json` names every model
+file: its address, its size and its SHA-256. For an archive it names the
+archive and each file taken out of it. The list is the only place that
+decides which file is the right one, so changing a model is a change to
+the list, in a commit. It was built from three records that had to agree:
+the files installed on the Mac, the checksums written down when they were
+first downloaded, and what GitHub publishes about each release file. A
+real download of every file on 15 November 2026 then matched it.
+
+**The command**, from `apps/voice`:
+
+```bash
+uv run python -m helios_voice.models
+```
+
+```bash
+uv run python -m helios_voice.models download
+```
+
+```bash
+uv run python -m helios_voice.models verify
+```
+
+The first shows what is installed. `download` fetches what HELIOS needs
+with its default settings and does not have: both recognisers, the speech
+detector and the int8 voice, about 1,050 MB. `download --all` adds the
+optional sets (the full-precision voice, the streaming recogniser, the wake
+word), about 1,850 MB in all; `download kokoro-full wake-word` fetches sets
+by name. `verify` re-reads every installed file and fails if one is not
+the listed file or if something HELIOS needs is missing. The command
+itself uses only Python's standard library.
+
+**The rules it keeps:**
+
+- A download is written to a side folder and hashed on the way. Only a
+  file with the recorded size and SHA-256 is moved into the models folder.
+  Anything else is deleted and reported, and nothing is installed from it.
+- An archive is opened only after its own hash matched. Only the members
+  named in the list are taken out, each to a place the program chose and
+  each compared with its own hash. The archive is deleted afterwards.
+- What is already in place and intact is not fetched again, so the command
+  can be repeated after a failure. A damaged file is replaced.
+- The worker compares a model file with the list each time it loads one. A
+  file that is missing or changed is not loaded; the error names the file
+  and the command that fetches it.
+- A file the list does not know (a wake model trained later, for example)
+  has nothing to be compared with and is loaded as it is.
+
+The release pages are not fixed: their owners can replace a file under the
+same name. (GitHub lists the Parakeet TDT archive as uploaded on 7 November
+2026, eight days before it was recorded here.) When a file is replaced the
+download is refused, on purpose. The new file then has to be looked at and
+the list changed by hand.
+
+The `SHA256SUMS` file that an earlier session left in the models folder is
+no longer used.
 
 | File | Source | Size |
 |---|---|---|
@@ -255,9 +347,11 @@ downloaded file is recorded in `SHA256SUMS` there.
    This installs Python 3.12 and the speech packages. Only Windows and
    macOS are supported, because openWakeWord 0.6.0 asks for a Linux-only
    package that has no build for Python 3.12.
-3. **Speech models**: download the files in the table above into
-   `<data folder>/models/` in the sub-folders `stt`, `vad`, `tts`, `wake`.
-   (A download command inside the app is still to be written.)
+3. **Speech models**: in `apps/voice`, run
+   `uv run python -m helios_voice.models download`, then
+   `uv run python -m helios_voice.models verify`. Add `--all` to the first
+   for the wake word, the full-precision voice and the streaming
+   recogniser.
 4. **An Anthropic API key** in the environment as `ANTHROPIC_API_KEY`
    before starting the core. Protected storage for the key is still to do.
 5. In `config.json` in the data folder set `"voice": { "enabled": true }`
@@ -287,6 +381,7 @@ to hear them). The benchmark produces the figures in this page.
 | If this fails | Then |
 |---|---|
 | Parakeet Unified will not load | Parakeet TDT v2 is loaded instead, and the log says so |
+| A model file is missing or is not the listed file | It is not loaded. For Parakeet Unified the fallback above applies; otherwise an error state on screen, and the voice status names the file and the command that fetches it |
 | The local model or Ollama is down | The light cloud model answers, if the rules allow; otherwise HELIOS says no model answered |
 | The cloud is blocked (switch, budget, sensitive content) | The local model answers and the reason is shown |
 | The voice worker dies | It is restarted; typing keeps working throughout |
@@ -298,19 +393,24 @@ to hear them). The benchmark produces the figures in this page.
 Nothing here has been run on it. To do there, in this order:
 
 1. `npm test` and `uv run pytest` pass on Windows.
-2. `qwen3.5:4b` in Ollama on the RTX 4060: GPU memory at 4,096 and 8,192
+2. `uv run python -m helios_voice.models download --all`, then `verify`:
+   the first use of the download command on Windows (it has run once on
+   the Mac). Then `uv run pytest` again: the tests that use the
+   real models are skipped until the files are there. Note how long the
+   check adds to the first use of each model on the Ryzen CPU.
+3. `qwen3.5:4b` in Ollama on the RTX 4060: GPU memory at 4,096 and 8,192
    tokens of context, tokens per second, cold start, tool calls.
-3. The benchmark above on the Ryzen CPU: load times, speed and memory of
+4. The benchmark above on the Ryzen CPU: load times, speed and memory of
    each speech model, and how they behave while the language model runs.
-4. The laptop microphone at two metres: recognition quiet, and with TV
+5. The laptop microphone at two metres: recognition quiet, and with TV
    sound; choose the non-streaming or the streaming export.
-5. HELIOS speaking through the TV speakers: does the microphone pick it up
+6. HELIOS speaking through the TV speakers: does the microphone pick it up
    enough to trigger anything, is the half-second guard enough, is echo
    cancellation needed.
-6. Time from the end of speech to the first sound of the answer, local
+7. Time from the end of speech to the first sound of the answer, local
    and cloud.
-7. Killing Ollama and the voice worker while in use.
-8. Idle load with everything running, for a machine that is always on.
+8. Killing Ollama and the voice worker while in use.
+9. Idle load with everything running, for a machine that is always on.
 
 ## Sources
 

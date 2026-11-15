@@ -5,11 +5,13 @@ Each has a tiny interface, a real implementation and a fake one. The real
 ones are loaded lazily (a model is only read into memory the first time it
 is needed) and all run on the CPU, so they do not compete with the local
 language model for GPU memory.
+
+Every model file goes through `checked` on its way in: a file that is
+missing, or is not the one recorded in models.json, is not loaded.
 """
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Protocol
@@ -17,21 +19,7 @@ from typing import Protocol
 import numpy as np
 
 from .audio import SAMPLE_RATE
-
-
-def models_dir() -> Path:
-    """Where the model files live: outside the repository, in the data folder."""
-    if os.environ.get("HOMEBASE_MODELS_DIR"):
-        return Path(os.environ["HOMEBASE_MODELS_DIR"])
-    if os.environ.get("HOMEBASE_DATA_DIR"):
-        return Path(os.environ["HOMEBASE_DATA_DIR"]) / "models"
-    home = Path.home()
-    if os.name == "nt":
-        return Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local")) / "HomeBase" / "models"
-    if (home / "Library").exists():
-        return home / "Library" / "Application Support" / "HomeBase" / "models"
-    return Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share")) / "homebase" / "models"
-
+from .models import checked, models_dir
 
 # The speech recognisers this worker knows, by the name used in the settings.
 STT_MODELS = {
@@ -59,14 +47,12 @@ class ParakeetStt:
         import sherpa_onnx
 
         folder = models_dir() / "stt" / STT_MODELS[model]
-        if not (folder / "encoder.int8.onnx").exists():
-            raise FileNotFoundError(f"speech model {model} is not installed")
         self.name = model
         self._recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
-            encoder=str(folder / "encoder.int8.onnx"),
-            decoder=str(folder / "decoder.int8.onnx"),
-            joiner=str(folder / "joiner.int8.onnx"),
-            tokens=str(folder / "tokens.txt"),
+            encoder=checked(folder / "encoder.int8.onnx"),
+            decoder=checked(folder / "decoder.int8.onnx"),
+            joiner=checked(folder / "joiner.int8.onnx"),
+            tokens=checked(folder / "tokens.txt"),
             model_type="nemo_transducer",
             num_threads=threads,
         )
@@ -99,11 +85,8 @@ class SileroVad:
     def __init__(self, min_silence: float = 0.6, threshold: float = 0.5) -> None:
         import sherpa_onnx
 
-        path = models_dir() / "vad" / "silero_vad.onnx"
-        if not path.exists():
-            raise FileNotFoundError("the speech detection model is not installed")
         config = sherpa_onnx.VadModelConfig()
-        config.silero_vad.model = str(path)
+        config.silero_vad.model = checked(models_dir() / "vad" / "silero_vad.onnx")
         config.silero_vad.threshold = threshold
         config.silero_vad.min_silence_duration = min_silence
         config.silero_vad.min_speech_duration = 0.2
@@ -171,10 +154,8 @@ class KokoroTts:
         from kokoro_onnx import Kokoro
 
         folder = models_dir() / "tts"
-        if not (folder / TTS_MODELS[model]).exists():
-            raise FileNotFoundError(f"voice model {model} is not installed")
         self.name = f"kokoro-{model}"
-        self._kokoro = Kokoro(str(folder / TTS_MODELS[model]), str(folder / "voices-v1.0.bin"))
+        self._kokoro = Kokoro(checked(folder / TTS_MODELS[model]), checked(folder / "voices-v1.0.bin"))
 
     def synthesize(self, text: str, voice: str, speed: float) -> tuple[np.ndarray, int]:
         samples, rate = self._kokoro.create(text, voice=voice, speed=speed, lang="en-us")
@@ -219,14 +200,12 @@ class OpenWakeWord:
         from openwakeword.model import Model
 
         folder = models_dir() / "wake"
-        if not (folder / model).exists():
-            raise FileNotFoundError(f"wake model {model} is not installed")
         self.name = Path(model).stem
         self._model = Model(
-            wakeword_models=[str(folder / model)],
+            wakeword_models=[checked(folder / model)],
             inference_framework="onnx",
-            melspec_model_path=str(folder / "melspectrogram.onnx"),
-            embedding_model_path=str(folder / "embedding_model.onnx"),
+            melspec_model_path=checked(folder / "melspectrogram.onnx"),
+            embedding_model_path=checked(folder / "embedding_model.onnx"),
         )
         self._pending = np.zeros(0, dtype=np.int16)
 

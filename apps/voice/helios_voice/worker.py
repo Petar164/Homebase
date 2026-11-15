@@ -29,6 +29,7 @@ import numpy as np
 
 from .audio import SAMPLE_RATE, AudioBackend, AudioUnavailable
 from .engines import SttEngine, TtsEngine, WakeEngine, split_sentences
+from .models import ModelUnavailable
 from .protocol import Channel, log
 
 
@@ -117,7 +118,9 @@ class Worker:
 
     def _error(self, code: str, error: BaseException | str) -> None:
         # Only the kind of error is passed on: an error message can quote input.
-        detail = error if isinstance(error, str) else type(error).__name__ if not isinstance(error, AudioUnavailable) else str(error)
+        # The two exceptions are this worker's own, and their text is written
+        # here: about a device, or about a model file and how to fetch it.
+        detail = error if isinstance(error, str) else str(error) if isinstance(error, (AudioUnavailable, ModelUnavailable)) else type(error).__name__
         log(f"error {code}: {detail}")
         self.channel.send("error", code=code, message=detail)
 

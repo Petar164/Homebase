@@ -9,7 +9,7 @@ committed, so work can stop after any step without leaving a broken state.
 | Phase | State |
 |---|---|
 | 1. Foundation | Built and tested on a Mac. Not yet run on the Windows laptop |
-| 2. HELIOS core | In progress: text conversation, routing and budget built; the AI and voice stack is being integrated on a branch |
+| 2. HELIOS core | In progress: text conversation, routing and budget built; the AI and voice stack is built and merged, tested on the Mac only |
 | 3. Memory and second brain | First piece built: full-text search over conversations |
 | 4. Neural interface | Not started |
 | 5. Action and integrations | Not started |
@@ -191,14 +191,15 @@ The full handoff, with the git state, test results, open issues and the
 exact next steps, is in [`PROJECT_STATE.md`](../PROJECT_STATE.md). Read that
 file first.
 
-**Last updated:** 15 November 2026, early morning
+**Last updated:** 15 November 2026, late evening
 
-**Current work: the AI and voice stack**, on the branch
-`feature/ai-voice-stack` (not merged, not pushed). The brief and what is
-verified so far are in [AI-VOICE-STACK.md](AI-VOICE-STACK.md). Phase 3 does
-not start until this is integrated, tested and documented.
+**Current work: the AI and voice stack.** It is merged into `main` and
+pushed (15 November 2026). The brief and what is verified so far are in
+[AI-VOICE-STACK.md](AI-VOICE-STACK.md). Next is the first session on the
+Windows laptop ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)). Phase 3 does not start
+until this is integrated, tested and documented, and the owner says so.
 
-**Done on the branch**
+**Done**
 
 - Routing between the local model, Haiku and Sonnet by fixed rules, with a
   stored reason for every answer.
@@ -211,7 +212,11 @@ not start until this is integrated, tested and documented.
   Python 3.12), packages installed, speech models downloaded.
 - First contact: Parakeet Unified, Parakeet TDT v2 and Kokoro all run on
   the Mac.
-- 97 core tests and 19 voice-worker tests pass (`npm test`, and `uv run pytest` in `apps/voice`).
+- A list of every speech model file with its address, size and SHA-256
+  (`apps/voice/helios_voice/models.json`), a command that downloads and
+  verifies them, and a check of each file before the worker loads it.
+- The voice worker is started without the cloud key.
+- 98 core tests and 54 voice-worker tests pass (`npm test`, and `uv run pytest` in `apps/voice`).
 
 **In progress / next, in order**
 
@@ -245,8 +250,13 @@ not start until this is integrated, tested and documented.
 8. Open, needs the owner: a first run with a real microphone and real
    speakers (microphone permission on the Mac, and sound out loud),
    including the feedback test. One real call to Claude (needs a key).
-9. Open: wiring the streaming export in for words-as-you-speak, a download
-   command for the speech models, protected storage for the API key.
+9. Done: the download command for the speech models
+   (`uv run python -m helios_voice.models download`), with the worker
+   refusing a file that is not the recorded one. Tested against a web
+   server on the Mac itself, and by one real download of every set into a
+   scratch folder.
+10. Open: wiring the streaming export in for words-as-you-speak, protected
+    storage for the API key.
 
 **Not done / not verified**
 
@@ -259,6 +269,8 @@ not start until this is integrated, tested and documented.
 
 - Speech models are in the `models` folder of the default data folder. The
   Python environment is `apps/voice/.venv` (run things with `uv run`).
+- Anything that writes model files is tried with `HOMEBASE_MODELS_DIR` set
+  to a scratch folder, never on the installed models.
 - Do not play audio through the speakers unattended at night; write audio
   to files, or play it very quietly.
 - Microphone access on macOS needs the owner's permission in a system
