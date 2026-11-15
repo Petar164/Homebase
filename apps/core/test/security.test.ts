@@ -21,11 +21,11 @@ describe("passwords", () => {
   it("has exactly one owner, created with a long enough password", async () => {
     const { db } = await open();
     expect(ownerExists(db)).toBe(false);
-    await expect(setOwnerPassword(db, "petar", "short")).rejects.toThrow(/at least 12/);
-    await setOwnerPassword(db, "petar", "a long enough password");
-    expect(await verifyOwner(db, "petar", "a long enough password")).toBe(true);
+    await expect(setOwnerPassword(db, "owner", "short")).rejects.toThrow(/at least 12/);
+    await setOwnerPassword(db, "owner", "a long enough password");
+    expect(await verifyOwner(db, "owner", "a long enough password")).toBe(true);
     expect(await verifyOwner(db, "someone-else", "a long enough password")).toBe(false);
-    expect(await verifyOwner(db, "petar", "wrong password here")).toBe(false);
+    expect(await verifyOwner(db, "owner", "wrong password here")).toBe(false);
   });
 });
 
