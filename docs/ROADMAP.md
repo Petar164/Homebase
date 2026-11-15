@@ -9,7 +9,7 @@ committed, so work can stop after any step without leaving a broken state.
 | Phase | State |
 |---|---|
 | 1. Foundation | Built and tested on a Mac. Not yet run on the Windows laptop |
-| 2. HELIOS core | In progress: text conversation works with a stand-in model; real models and voice not yet run |
+| 2. HELIOS core | In progress: text conversation, routing and budget built; the AI and voice stack is being integrated on a branch |
 | 3. Memory and second brain | First piece built: full-text search over conversations |
 | 4. Neural interface | Not started |
 | 5. Action and integrations | Not started |
@@ -187,52 +187,67 @@ laptop.
 This section is rewritten at the end of every work session so the next one
 can start without context.
 
-**Last updated:** 15 November 2026
+**Last updated:** 15 November 2026, early morning
 
-**Done**
+**Current work: the AI and voice stack**, on the branch
+`feature/ai-voice-stack` (not merged, not pushed). The brief and what is
+verified so far are in [AI-VOICE-STACK.md](AI-VOICE-STACK.md). Phase 3 does
+not start until this is integrated, tested and documented.
 
-- Repository audit and design documents.
-- Phase 1 on a Mac: the core (data folder, migrations, snapshots, mirrors,
-  restore, login, audit log, tasks and overview API, import), the
-  `homebase` command and the first screen.
-- Phase 2, first part: HELIOS's core loop, tools with risk tiers, approvals,
-  the cloud approval gate and cost cap, the event stream, the conversation
-  on the screen, and connections to Claude and Ollama.
-- Phase 3, first piece: full-text search over past conversations, as a
-  HELIOS tool.
-- Sales, stock and buyers in the core: one invoice number per sale for
-  ever, a stock item sold once, a sale complete only with every invoice
-  field, returning buyers recognised. With a sales screen: pick an item
-  from stock, paste the buyer's address, see what an invoice still needs.
-  Checked by hand in a browser. 76 automated tests in total.
-- A written plan for the first session on the laptop
-  ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)).
+**Done on the branch**
+
+- Routing between the local model, Haiku and Sonnet by fixed rules, with a
+  stored reason for every answer.
+- Data policy: cloud switch, approval for sensitive content, secret content
+  withheld from every model.
+- Budget in euros with reservations, a warning at 15 and a stop at 20.
+- A failing model no longer ends the turn.
+- States `transcribing`, `retrieving` and `error` added.
+- The Python project for the voice worker (`apps/voice`, managed with uv,
+  Python 3.12), packages installed, speech models downloaded.
+- First contact: Parakeet Unified, Parakeet TDT v2 and Kokoro all run on
+  the Mac.
+- 84 automated tests pass.
+
+**In progress / next, in order**
+
+1. Run `qwen3.5:4b` for real and fix the Ollama connection against it
+   (quantisation, memory, speed, tool calls). On the Mac this uses a
+   current Ollama run separately on port 11435, because the installed one
+   (0.18.3) is too old for this model.
+2. Add the "which model answered, and what has it cost" tool, and a
+   detector that labels obvious keys and passwords as secret.
+3. Build the voice worker: protocol over standard input and output, mock
+   audio and engines for tests, then the real ones.
+4. The core's voice supervisor, routes for push-to-talk and cancel, speech
+   into the conversation, answers spoken sentence by sentence.
+5. Push-to-talk on the screen.
+6. Wake word plumbing; document what training "Hey Helios" takes.
+7. The audition tool and the benchmarks (one model per process).
+8. Finish AI-VOICE-STACK.md, update ARCHITECTURE.md, final report.
 
 **Not done / not verified**
 
 - Nothing has run on the Windows laptop.
-- No real model has answered yet. The Claude and Ollama connections are
-  tested against fakes only.
-- No real Home Base exists yet. The owner account, the first real import
-  and the external-drive mirror are set up on the machine that will run it.
+- No real model has answered yet: no API key exists, and the local model's
+  first run is pending.
+- No microphone or speaker has been used yet. Speech tests so far fed
+  synthesised audio straight to the recogniser.
 
-**Next**
+**Practical notes for the next session**
 
-Does not need the owner:
+- Speech models are in the `models` folder of the default data folder. The
+  Python environment is `apps/voice/.venv` (run things with `uv run`).
+- Do not play audio through the speakers unattended at night; write audio
+  to files, or play it very quietly.
+- Microphone access on macOS needs the owner's permission in a system
+  dialog. If it is not granted, mark microphone tests as pending.
+- Anything in the browser is checked against a scratch data folder on port
+  7127, never the default data folder or port 7117.
 
-1. The rest of the Home Base screens: the invoice as a PDF, taxes and
-   analytics from the logged sales, the training log and calendar entries
-   (tables and import exist; API and screens do not).
-2. The importer for Claude conversation exports, written tolerantly and
-   then checked against a real export.
+**After this work (unchanged)**
 
-Needs the owner:
-
-3. An Anthropic API key and a monthly cap, then one real conversation to
-   prove the Claude connection.
-4. A Claude data export (claude.ai, Settings, Privacy, Export data) to
-   check the importer against.
-5. The session on the Windows laptop ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)).
-
-Later in phase 2: protected storage for keys, the voice worker, starting
-with Windows, off-machine backup.
+- Needs the owner: an Anthropic API key, a Claude data export, the session
+  on the Windows laptop ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)).
+- Then: the 3D brain, the invoice as a PDF, taxes and analytics screens,
+  the importer for Claude conversation exports.

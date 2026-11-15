@@ -35,3 +35,9 @@ npm-debug.log*
 .claude/
 .vscode/
 .idea/
+
+# 6. Python (the voice worker): the environment is rebuilt by uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
