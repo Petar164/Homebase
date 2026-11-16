@@ -231,7 +231,11 @@ integrated, tested and documented, and the owner says so.
   local model at more than one context size; and the checks, their marks
   (confirmed by the owner on 15 November 2026) and an empty results table
   are written down.
-- 100 core tests and 75 voice-worker tests pass (`npm test`, and `uv run pytest` in `apps/voice`).
+- 108 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
+- On the Windows laptop the core tests failed in the HTTP tests: their shared
+  folder was removed while its database was still open, which Windows
+  refuses. The tests' cleanup is fixed on the Mac (16 November 2026). The fix
+  has not run on Windows yet.
 
 **In progress / next, in order**
 

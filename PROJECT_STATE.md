@@ -5,16 +5,16 @@ session needs to continue without the earlier conversation. Rewrite it at the
 end of every session. `docs/ROADMAP.md` holds the plan; this file holds where
 the work actually is.
 
-**Last updated:** 15 November 2026, near midnight
+**Last updated:** 16 November 2026
 
 ## 1. Snapshot
 
 | | |
 |---|---|
 | Current work | The acceptance checks between Phase 2 and Phase 3, on the Windows laptop |
-| State | The AI and voice stack is built, tested and documented on the Mac. The preparation for the acceptance checks (measuring tools, the checklist with the marks the owner confirmed, an empty results table) is done on the Mac too. Both are on `main` and pushed. **No check has been run on the laptop** |
-| Branch | `main`, the same as `origin/main`. Nothing is uncommitted. Two old branches exist on the Mac only and hold nothing more: `feature/ai-voice-stack` and `laptop-acceptance` |
-| Tests | 100 of 100 in the core, 75 of 75 in the voice worker, type check clean, all on the Mac |
+| State | The AI and voice stack is built, tested and documented on the Mac. The preparation for the acceptance checks (measuring tools, the checklist with the marks the owner confirmed, an empty results table) is done on the Mac too. Both are on `main` and pushed. Setup on the laptop has begun: its first run of the core tests failed in the HTTP tests (reported by the owner on 16 November 2026). The cause was how the tests clean up, not the app. The fix is one commit on the Mac, **not pushed and not on `main` yet**, and it has not run on Windows. **No acceptance check has been reported from the laptop** |
+| Branch | `fix/http-test-cleanup`, one commit ahead of `main`, on the Mac only. `main` is the same as `origin/main` (`c33330d`). Nothing is uncommitted. Two old branches exist on the Mac only and hold nothing more: `feature/ai-voice-stack` and `laptop-acceptance` |
+| Tests | 108 of 108 in the core, 75 of 75 in the voice worker, type check clean, all on the Mac |
 | Next phase | Phase 3 (memory and second brain). **Do not start it until the owner explicitly authorises it** |
 
 Three things are not verified anywhere: a real microphone and speakers, a
@@ -73,7 +73,7 @@ microphone about two metres away.
 
 | Phase | State |
 |---|---|
-| 1. Foundation | Done on the Mac, pushed. Not yet run on Windows |
+| 1. Foundation | Done on the Mac, pushed. Not yet verified on Windows: its tests ran there once and failed in one file (section 7) |
 | 2. HELIOS core | Core done and pushed: conversation, tools with risk tiers, approvals, cloud gate, conversation search, sales with its screen. Not everything in the roadmap's Phase 2 list is finished; see `docs/ROADMAP.md` |
 | AI and voice stack | Done on the Mac, merged and pushed. Not yet run on Windows. What is still open is in sections 9 and 11 |
 | 3. Memory and second brain | Not started |
@@ -249,25 +249,36 @@ confirmed (section 1).
 
 ## 6. Git state
 
-Everything is on `main`, and `main` is pushed: `origin/main` is the same
-commit. Nothing is uncommitted. The history is one line, without merge
-commits. Every push was a normal one, made after the audit in section 13
-and on the owner's yes.
+`main` is pushed: `origin/main` is the same commit, `c33330d`. Nothing is
+uncommitted. The history is one line, without merge commits. Every push
+was a normal one, made after the audit in section 13 and on the owner's
+yes.
 
-The preparation for the acceptance checks is the last three commits. It
-was made on the branch `laptop-acceptance` and came into `main` on
-15 November 2026 by moving `main` forward to it.
+**One commit is not on `main` and not pushed.** It is on the branch
+`fix/http-test-cleanup`, on the Mac only, made on 16 November 2026: the
+fix for the test failure the laptop found (section 7). The owner asked for
+it to be committed and not pushed yet. With the owner's yes it reaches the
+laptop the usual way: the audit, `main` moved forward to it, a normal push.
+
+| Commit | What |
+|---|---|
+| the newest, on `fix/http-test-cleanup` | Keep the HTTP tests' shared folder until its server and database are closed. This file is part of that commit, so its number is not written here; `git log -1 fix/http-test-cleanup` shows it |
+
+The preparation for the acceptance checks is the three commits before
+that, the last three on `main`. It was made on the branch
+`laptop-acceptance` and came into `main` on 15 November 2026 by moving
+`main` forward to it.
 
 | Commit | What |
 |---|---|
 | `39d2994` | Time each spoken exchange from the release of the talk button to the first sound |
 | `eb9c96c` | Add real microphone and speaker checks; benchmark the local model at several context sizes |
-| the newest | Add the acceptance checks before Phase 3, with the marks the owner confirmed. This file is part of that commit, so its number is not written here; `git log -1` shows it |
+| `c33330d` | Add the acceptance checks before Phase 3, with the marks the owner confirmed |
 
 The AI and voice stack is the 13 commits before those. It was built on the
 branch `feature/ai-voice-stack` and came into `main` the same day, the same
-way. Both branches still exist on the Mac only. They were never pushed and
-can be deleted.
+way. Both of those branches still exist on the Mac only. They were never
+pushed and can be deleted.
 
 | Commit | What |
 |---|---|
@@ -289,18 +300,78 @@ Before these, `main` held 15 commits, up to `46a8d33`.
 
 ## 7. Tests
 
-Run on 15 November 2026 on the Mac, on the code that was pushed:
+Run on 16 November 2026 on the Mac, on the commit with the fix
+(`fix/http-test-cleanup`):
 
 | Command | Result |
 |---|---|
-| `npm test` | 100 passed, 0 failed (7 files) |
+| `npm test` | 108 passed, 0 failed (8 files) |
 | `npm run typecheck` | clean |
 | `cd apps/voice && uv run pytest` | 75 passed, 0 failed |
 
 The AI and voice stack itself (`9cc1656`) had 98 and 54; both passed on
 it. The preparation for the acceptance checks added 2 in the core (the
 timing of a spoken exchange) and 21 in the voice worker (19 for the device
-checks and the summary of the latency figures, 2 for the benchmark).
+checks and the summary of the latency figures, 2 for the benchmark). The
+pushed code (`c33330d`) therefore has 100 and 75. The fix below added 8 in
+the core.
+
+### The test failure on Windows, and its fix
+
+**What was reported.** On 16 November 2026 the owner reported that the core
+tests fail on the laptop, every time, in `apps/core/test/http.test.ts`. The
+Windows output itself was not seen on the Mac.
+
+**Cause.** A fault in the tests, not in the app. The HTTP tests open one
+database and one server for the whole file, in `beforeAll`. They took the
+folder for it from `tempDir()`, and `tempDir()` removes its folders after
+every single test. So the folder was deleted after the first test, with the
+database still open in it. Windows refuses to delete an open file. A Mac
+deletes it without a word and carries on with a deleted file, which is why
+all 100 tests passed there; the only trace was one stray folder left in the
+temporary folder by every run.
+
+**Fix**, in the tests only (`apps/core/test/helpers.ts` and `http.test.ts`):
+
+- `sharedAcrossTests()` is for what a group of tests shares. It has its own
+  `tempDir()` and `track()`. Its cleanup is wrapped around the whole group
+  (Vitest's `aroundAll`), so it is the last thing to happen in it: everything
+  tracked is closed, newest first, and only then are the folders removed.
+  The HTTP tests track their database and their server, so the server
+  closes, then the database, then the folder goes.
+- The plain `tempDir()` and `track()` are unchanged inside a test. Outside
+  one, for example in `beforeAll`, they now refuse with a message that names
+  `sharedAcrossTests()`. The mistake that caused this failure therefore
+  fails on a Mac too.
+- Nothing outside `apps/core/test` changed, apart from the documents.
+
+**How it was checked on the Mac.** Windows' rule was imitated: a scratch
+script made deleting a folder fail while a file in it was still open in the
+test process (it asks `lsof`). That script is not in the repository.
+
+| Run of all core tests | Result |
+|---|---|
+| Before the fix, with the rule imitated | 1 of 100 failed: the first test of the HTTP file, at the line of the helper that removes the folder. Of 157 deletions, that one had open files (the database and its two side files) |
+| After the fix, ordinary run | 108 of 108 passed, and no stray folder is left |
+| After the fix, with the rule imitated | 108 of 108 passed. Of 161 deletions, none had an open file |
+
+The 8 new tests: 7 in `apps/core/test/helpers.test.ts` for the cleanup
+itself (a test's own folder is closed and then removed after that test; a
+shared one stays for every test of its group and goes last of all, closed
+before removed; the refusals), and 1 in the HTTP file (its data folder is
+still on disk after its last test; this one failed before the fix, on the
+Mac). The cleanup was then broken on purpose in 18 ways, one at a time,
+among them the original mistake with and without the new refusal:
+
+- 16 made a test fail in an ordinary Mac run.
+- 1 is allowed and still passes: closing the server through a function
+  returned from `beforeAll` instead of `track()`.
+- 1 is not seen by an ordinary Mac run: a database opened in a shared
+  folder and closed nowhere. It failed only with the rule imitated, as it
+  would on Windows (section 9, point 18).
+
+**Not done:** the fix has not run on Windows. An imitation on a Mac is not
+a Windows result.
 
 Of the 75 voice tests, 7 use the real speech models and are skipped on a
 machine that does not have them, and 1 needs the optional `openwakeword`
@@ -393,8 +464,10 @@ laptop session can read it from the log; no exchange has been spoken yet.
    which needs 0.19 or newer. The test used the current release run
    separately on another port with its own model store; both were removed
    afterwards. The owner's install was not touched.
-4. **Nothing has run on Windows.** Not the tests, not the models, not the
-   benchmarks.
+4. **Nothing has passed on Windows.** The core tests ran on the laptop and
+   failed in the HTTP tests (section 7). The fix has not run there. Nothing
+   else has been reported from the laptop: not the voice tests, not the
+   models, not the benchmarks.
 5. **"Hey Helios" is not trained.** Wake mode is wired but has no model for
    that phrase.
 6. **Words-as-you-speak is not wired in.** The streaming Parakeet export
@@ -437,6 +510,12 @@ laptop session can read it from the log; no exchange has been spoken yet.
     sound drivers often do. Check F1 could then report that the microphone
     did not hear the speakers at all. That would be a finding to write
     down, not a fault of the check.
+18. **A Mac cannot see a folder deleted with a file still open in it.**
+    macOS allows it; Windows refuses. The test helpers now turn the usual
+    form of that mistake into a failure on every machine (section 7). One
+    form stays invisible on a Mac: something opened in a shared test folder
+    and never closed. Only a test run on Windows shows it, so the core
+    tests have to be run on the laptop after every change to them.
 
 ## 10. Decisions already made
 
@@ -491,32 +570,43 @@ laptop session can read it from the log; no exchange has been spoken yet.
 
 ## 12. Exact next steps
 
-In this order. Everything the laptop needs is on GitHub. Steps 2 to 6 need
-the owner in the room or a decision of the owner.
+In this order. Everything the laptop needs is on GitHub, except the fix
+in step 1. Steps 1 and 3 to 7 need the owner in the room or a decision of
+the owner.
 
-1. **Windows laptop, setup.** Clone the repository from GitHub and follow
-   `docs/LAPTOP-SETUP.md` from the top, sections 1 to 7. The owner brings
-   the export file over separately; it never goes through the repository.
-   Before the first commit there, set the git identity (section 13).
-2. **Windows laptop, acceptance checks.** Section 8 of the setup plan and
+1. **Bring the fix for the failing tests to the laptop.** It is one commit
+   on `fix/http-test-cleanup` on the Mac, not pushed (section 6). With the
+   owner's yes: the audit, `main` moved forward to it, a normal push. On
+   the laptop: `git pull`, then `npm test`. Expect 108 of 108. Write what
+   actually happened into the failures table of
+   `docs/PHASE-2-ACCEPTANCE.md`; its row for this failure still says "Not
+   run again on the laptop". If the laptop has changes of its own in files
+   this commit touches, commit or set them aside before pulling.
+2. **Windows laptop, setup.** Follow `docs/LAPTOP-SETUP.md`, sections 1 to
+   7. The repository is on the laptop already, since the tests were run
+   there; how far the rest of setup got is not known on the Mac. The owner
+   brings the export file over separately; it never goes through the
+   repository. Before the first commit there, set the git identity
+   (section 13).
+3. **Windows laptop, acceptance checks.** Section 8 of the setup plan and
    `docs/PHASE-2-ACCEPTANCE.md`, in that page's order (the owner's
    priorities), on the scratch copy described there. The checks with a
    microphone or speakers need the owner in the room. Write every result,
    failure and fix into that page, and save the raw files under
    `docs/benchmarks/`. A fix is the smallest change that solves the
    problem. Nothing is "Passed" before it ran there.
-3. **One real Claude call** (check H1). Needs an API key in `.env`
+4. **One real Claude call** (check H1). Needs an API key in `.env`
    (ignored by git). One request that routes to Sonnet and one to Haiku:
    streaming, the stored usage, the cost against the reservation, and that
    the fallback option is accepted. It stays on the outstanding list until
    it has run.
-4. **Voice choice.** Apply the owner's pick through `PUT /api/voice/settings`
+5. **Voice choice.** Apply the owner's pick through `PUT /api/voice/settings`
    or `config.json`.
-5. **If streaming is chosen:** wire partial transcripts from the streaming
+6. **If streaming is chosen:** wire partial transcripts from the streaming
    export into the worker and show them on screen.
-6. **Backlog:** protected storage for the API key, and a backup that leaves
+7. **Backlog:** protected storage for the API key, and a backup that leaves
    the machine. Both wait on the owner (section 11, points 8 and 9).
-7. **Phase 3**, only after the owner explicitly authorises it.
+8. **Phase 3**, only after the owner explicitly authorises it.
 
 Not needed for the laptop, and not done: the `check` commands on the Mac's
 own microphone and speakers (offered to the owner as a trial run, not
@@ -563,6 +653,10 @@ updated first; section 11, point 2).
 - **No unnecessary architectural changes.** What a check turns up is fixed
   with the smallest change that solves it, and gets a line in the failures
   table with its commit.
+- **In tests, close before you remove.** Windows cannot delete an open
+  file, and a Mac run does not show the mistake. `tempDir()` and `track()`
+  are for one test; what a whole file shares goes through
+  `sharedAcrossTests()` (`apps/core/test/helpers.ts`).
 - **Never log what was said or typed.** Logs hold kinds of events only.
 - **A model changes in `models.json`, in a commit.** Never make a check pass
   by editing a hash to match a file that arrived differently.

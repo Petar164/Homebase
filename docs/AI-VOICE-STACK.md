@@ -31,7 +31,8 @@ provider is another small file.
 
 ## What was actually tested
 
-**Automated tests: 100 in the core, 75 in the voice worker, all passing.**
+**Automated tests: 108 in the core, 75 in the voice worker, all passing on
+the Mac.**
 They cover each acceptance point of the brief:
 
 | # | Requirement | Where it is tested |

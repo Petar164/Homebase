@@ -226,7 +226,7 @@ One line per check, filled in on the laptop. Raw files go in
 
 | Date | Check | What happened | Cause | Fix, with its commit | Result when run again |
 |---|---|---|---|---|---|
-| | | Nothing yet: no check has been run | | | |
+| 16 November 2026 | Setup, before any check: `npm test` (setup plan, section 1) | The core tests failed on the laptop, every time, in `apps/core/test/http.test.ts`. Reported by the owner; the Windows output was not seen on the Mac | A fault in the tests, not in the app. The HTTP tests share one database for the whole file, but took its folder from a helper that removes folders after every single test. The folder was deleted after the first test with the database still open in it. Windows refuses that; a Mac allows it, so the tests passed there | The commit "Keep the HTTP tests' shared folder until its server and database are closed". A shared folder now goes last of all, after its server and its database are closed. Changes in `apps/core/test` only | **Not run again on the laptop.** On the Mac: 108 of 108, also with Windows' rule imitated (a folder with an open file cannot be deleted). That is not a Windows result |
 
 ## The marks, as the owner confirmed them
 

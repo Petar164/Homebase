@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { Overview, Task } from "@homebase/shared";
 import type { FastifyInstance } from "fastify";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -7,9 +8,11 @@ import { type Instance, openInstance } from "../src/instance.ts";
 import { verifyAuditLog } from "../src/security/audit.ts";
 import { setOwnerPassword } from "../src/security/owner.ts";
 import { silentLogger } from "../src/util.ts";
-import { tempDir } from "./helpers.ts";
+import { sharedAcrossTests } from "./helpers.ts";
 
 // One server for the whole file: hashing a password is slow on purpose.
+// So its data folder has to last for the whole file too.
+const shared = sharedAcrossTests();
 const PASSWORD = "test-only password 1234";
 const HOST = "localhost:7117";
 const ORIGIN = `http://${HOST}`;
@@ -31,13 +34,10 @@ function call(method: Method, url: string, body?: unknown, options: { cookie?: s
 }
 
 beforeAll(async () => {
-  instance = await openInstance({ dataDir: tempDir() });
+  instance = shared.track(await openInstance({ dataDir: shared.tempDir() }));
   await setOwnerPassword(instance.db, "owner", PASSWORD);
   ({ app, routes } = await buildServer({ instance, log: silentLogger }));
-  return async () => {
-    await app.close();
-    instance.close();
-  };
+  shared.track(app); // when the file is over: the server closes, then the database, then the folder goes
 });
 
 describe("who gets in", () => {
@@ -184,5 +184,13 @@ describe("import and overview", () => {
   it("logs out by deleting the session on the server", async () => {
     expect((await call("POST", "/api/auth/logout", {})).statusCode).toBe(200);
     expect((await call("GET", "/api/tasks")).statusCode).toBe(401); // the old cookie is now worthless
+  });
+});
+
+describe("the server all these tests share", () => {
+  // Its folder was once removed after the first test, with the database still
+  // open in it. Windows refused; a Mac carried on with a deleted file.
+  it("still has its data folder after the last of them", () => {
+    expect(existsSync(instance.paths.dbFile)).toBe(true);
   });
 });
