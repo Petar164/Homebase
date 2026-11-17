@@ -312,7 +312,7 @@ export class VoiceService {
         break;
       case "error":
         // Only the kind of problem is kept and logged.
-        this.log.warn(`Voice worker reported ${event.code}.`);
+        this.log.warn(`Voice worker reported ${event.code} (${String(event.message).match(/^[A-Za-z_][A-Za-z0-9_]{0,80}$/)?.[0] ?? "details hidden"}).`);
         this.fail(event.code, event.message);
         break;
       default:

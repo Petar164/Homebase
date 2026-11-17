@@ -52,7 +52,7 @@ const configSchema = z.object({
           /** How long Ollama keeps the model loaded after an answer. */
           keepAlive: z.string().default("10m"),
           /** Lets the model reason before answering. Slower; off for spoken answers. */
-          think: z.boolean().default(false),
+          think: z.union([z.boolean(), z.enum(["low", "medium", "high"])]).default(false),
         })
         .prefault({}),
       cloud: z

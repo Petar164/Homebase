@@ -52,11 +52,11 @@ export class OllamaProvider implements ModelProvider {
   private readonly fetch: typeof fetch;
   private readonly contextTokens: number;
   private readonly keepAlive: string;
-  private readonly think: boolean;
+  private readonly think: boolean | "low" | "medium" | "high";
   private checked: { at: number; ok: boolean } | null = null;
   private calls = 0;
 
-  constructor(options: { baseUrl: string; model: string; contextTokens?: number; keepAlive?: string; think?: boolean; fetch?: typeof fetch }) {
+  constructor(options: { baseUrl: string; model: string; contextTokens?: number; keepAlive?: string; think?: boolean | "low" | "medium" | "high"; fetch?: typeof fetch }) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.model = options.model;
     this.contextTokens = options.contextTokens ?? 8192;

@@ -120,7 +120,11 @@ class Worker:
         # Only the kind of error is passed on: an error message can quote input.
         # The two exceptions are this worker's own, and their text is written
         # here: about a device, or about a model file and how to fetch it.
-        detail = error if isinstance(error, str) else str(error) if isinstance(error, (AudioUnavailable, ModelUnavailable)) else type(error).__name__
+        if isinstance(error, UnicodeEncodeError):
+            encoding = error.encoding.replace("-", "_")
+            detail = f"UnicodeEncodeError_{encoding}_U{ord(error.object[error.start]):04X}"
+        else:
+            detail = error if isinstance(error, str) else str(error) if isinstance(error, (AudioUnavailable, ModelUnavailable)) else type(error).__name__
         log(f"error {code}: {detail}")
         self.channel.send("error", code=code, message=detail)
 
