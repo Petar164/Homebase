@@ -11,7 +11,7 @@ import { SourceBook } from "../web/sources.ts";
 import { budgetStatus, chooseProvider, classifyRequest, costMicros, estimateMicros, recordEgress, reserve, settle, settleAbandoned, type Task, warningDue } from "./policy.ts";
 import { looksLikeSecret } from "./secrets.ts";
 import { findTool, type Tool, type ToolCheck, type ToolContext, type ToolOutput, toolSpecs, type TurnFacts } from "./tools.ts";
-import { type ChatMessage, type ChatResponse, maxSensitivity, type ModelProvider, SENSITIVITY, type Sensitivity, type ToolCall, type ToolResult } from "./types.ts";
+import { type ChatMessage, type ChatResponse, maxSensitivity, type ModelProvider, ProviderError, SENSITIVITY, type Sensitivity, type ToolCall, type ToolResult } from "./types.ts";
 
 // HELIOS's core loop. One message from the owner becomes one "turn":
 //
@@ -224,12 +224,19 @@ export class Helios {
   }
 
   /**
-   * Where the model's view of a conversation starts. Decided once per turn
-   * and then kept: if the start moved while a turn is running, the model
-   * would see its own earlier steps with a different beginning.
+   * Where the model's view of a conversation starts: a fixed number of
+   * messages back from the owner's latest message. Counted from there and
+   * not from the end of the transcript, so that it is the same for the
+   * whole turn, also when the turn goes on later, after an approval. If the
+   * start moved while a turn is in progress, the model would see its own
+   * earlier steps with a different beginning, and a cloud model turns down
+   * reasoning that is sent back to it after such a change.
    */
   private windowStart(conversationId: string): number {
-    let rows = this.rows(conversationId, HISTORY_MESSAGES);
+    const turn = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM messages WHERE conversation_id = ? AND role = 'user'").get(conversationId) as { seq: number };
+    let rows = (
+      this.db.prepare("SELECT seq, role FROM messages WHERE conversation_id = ? AND seq <= ? ORDER BY seq DESC LIMIT ?").all(conversationId, turn.seq, HISTORY_MESSAGES) as Pick<MessageRow, "seq" | "role">[]
+    ).reverse();
     // The view must not start in the middle of an answer.
     while (rows.length > 0 && (rows[0]?.role === "assistant" || rows[0]?.role === "tool")) rows = rows.slice(1);
     return rows[0]?.seq ?? 0;
@@ -353,7 +360,7 @@ export class Helios {
       const route = await chooseProvider({
         providers: this.providers,
         prefer: config.ai.prefer,
-        cloudEnabled: cloudConfig.enabled,
+        cloudEnabled: cloudConfig.allowed,
         purpose: "conversation",
         task,
         sensitivity: history.sensitivity,
@@ -417,19 +424,35 @@ export class Helios {
       try {
         response = await provider.chat(request);
       } catch (error) {
-        // The error text can quote the request, so only its type is logged.
-        this.log.error(`Model ${provider.id} failed (${(error as Error).name}).`);
-        if (reservation) settle(this.db, reservation, { sent: false });
+        // The error text can quote the request, so only its kind is logged.
+        const known = error instanceof ProviderError ? error : null;
+        this.log.error(`Model ${provider.id} failed (${known ? known.kind : (error as Error).name}).`);
+        // What was set aside is given back, unless the provider may already
+        // have begun to answer: then the attempt can be on the bill, and it
+        // is counted as if it were.
+        if (reservation) settle(this.db, reservation, { sent: false, mayBeBilled: known ? known.billable : true });
         failed.add(provider.id);
-        continue; // another model may still be able to answer
+        // A wrong key or an empty account is something the owner has to act
+        // on, so a model that knows why it could not answer says so. The
+        // turn goes on: another model may still be able to answer.
+        if (known && known.kind !== "aborted") note(`${provider.model} could not answer. ${known.message}`);
+        continue;
       }
       if (reservation) {
         // After the call: replace the estimate with what it really cost.
         settle(this.db, reservation, { sent: true, tokensIn: response.usage.inputTokens, tokensOut: response.usage.outputTokens, costMicros: costMicros(config, response.model, response.usage) });
         warn = warningDue(this.db, config, this.now());
       }
+      // Said once per month, and only where it cannot come between a tool
+      // request and its result: the model is shown a request only together
+      // with the result that follows it directly.
+      const sayWarning = () => {
+        if (warn) note(`Cloud spending this month has reached €${cloudConfig.budget.warnEur} of the €${cloudConfig.budget.capEur} limit.`);
+        warn = false;
+      };
       if (response.stop === "refusal") {
         note("The model declined to answer that.");
+        sayWarning();
         break;
       }
 
@@ -448,11 +471,15 @@ export class Helios {
         tokensIn: response.usage.inputTokens,
         tokensOut: response.usage.outputTokens,
       });
-      // Said after the answer, once per month.
-      if (warn) note(`Cloud spending this month has reached €${cloudConfig.budget.warnEur} of the €${cloudConfig.budget.capEur} limit.`);
-      if (response.toolCalls.length === 0) break;
+      if (response.toolCalls.length === 0) {
+        // An answer that ran into its length limit ends in the middle of a thought. Say so, whichever model it was.
+        if (response.stop === "max_tokens") note("That answer was cut off at its length limit.");
+        sayWarning();
+        break;
+      }
       if (step === MAX_STEPS - 1) {
         note("I stopped after several steps without finishing. Ask me again, more specifically.");
+        sayWarning();
         break;
       }
 
@@ -460,6 +487,7 @@ export class Helios {
       const asked = response.toolCalls.map((call) => findTool(call.name));
       this.setState(asked.some((tool) => tool?.reach === "web") ? "browsing" : asked.some((tool) => tool?.searches) ? "retrieving" : "acting");
       const facts = this.turnFacts(conversationId, from);
+      facts.modelFailed = failed.size > 0;
       // The provider's own count of what the conversation takes so far, when it gives one.
       let room = this.webRoom(provider, response.usage.inputTokens > 0 ? response.usage.inputTokens + response.usage.outputTokens : Math.ceil(egress.bytes / 3));
       let webCallsLeft = asked.filter((tool) => tool?.reach === "web").length;
@@ -479,6 +507,7 @@ export class Helios {
         if (reachesWeb) webCallsLeft--;
       }
       this.append(conversationId, { role: "tool", text: "", content: { results }, sensitivity: label });
+      sayWarning();
       this.setState("thinking");
     }
 
@@ -531,6 +560,7 @@ export class Helios {
       ownerText: shown.at(-1)?.seq === turnStart ? (shown.at(-1)?.text ?? "") : "",
       ownerTexts: shown.map((row) => row.text),
       webRead: false,
+      modelFailed: false,
       recordsRead: false,
       records: [],
       searches: 0,
@@ -650,8 +680,11 @@ export class Helios {
     const tier = Math.max(tool.tier, closer.tier ?? 0) as 0 | 1 | 2 | 3;
     // Once text from the web has been read in this turn, nothing is changed
     // on a standing permission: a page must never cause a change by asking
-    // for one. Every change then waits for the owner's own yes.
-    const mayRunNow = tier === 0 || (tier === 1 && this.instance.config.ai.autoApproveTier1 && !turn.webRead);
+    // for one. Every change then waits for the owner's own yes. The same
+    // holds once a model has failed in this turn: the model that takes over
+    // sees what was already done, but if it asks for a change again, that
+    // change is the owner's to confirm, never repeated on its own.
+    const mayRunNow = tier === 0 || (tier === 1 && this.instance.config.ai.autoApproveTier1 && !turn.webRead && !turn.modelFailed);
     if (!mayRunNow) {
       const approval = this.createApproval({
         kind: "tool",
@@ -735,7 +768,7 @@ export class Helios {
 
   /** The facts of the turn an approval belongs to, with the room the conversation has left for what comes back. */
   private factsForApproval(conversationId: string | null): TurnFacts {
-    if (!conversationId) return { ownerText: "", ownerTexts: [], webRead: false, recordsRead: false, records: [], searches: 0, pages: 0, sources: new SourceBook(), roomChars: 0 };
+    if (!conversationId) return { ownerText: "", ownerTexts: [], webRead: false, modelFailed: false, recordsRead: false, records: [], searches: 0, pages: 0, sources: new SourceBook(), roomChars: 0 };
     const from = this.windowStart(conversationId);
     const facts = this.turnFacts(conversationId, from);
     const used = Math.ceil(Buffer.byteLength(JSON.stringify([SYSTEM_PROMPT, this.history(conversationId, from).messages, toolSpecs()])) / 3);
@@ -767,15 +800,23 @@ export class Helios {
     if (this.busy) throw new AppError(409, "HELIOS is still answering. Try again in a moment.");
 
     const conversationId = row.conversation_id;
-    const close = (status: "approved" | "denied", result: string) => {
-      this.db.prepare("UPDATE approvals SET status = ?, decided_at = ?, decided_via = ?, result = ? WHERE id = ?").run(status, this.now().toISOString(), via, result, id);
+    // The owner's answer is written down before anything is done with it.
+    // From that moment the request is no longer open, so its action cannot
+    // run a second time: not on a second click, and not after a crash in the
+    // middle of it, when the first run may already have changed something.
+    const answer = (status: "approved" | "denied") => {
+      const done = this.db.prepare("UPDATE approvals SET status = ?, decided_at = ?, decided_via = ? WHERE id = ? AND status = 'pending'").run(status, this.now().toISOString(), via, id);
+      if (Number(done.changes) !== 1) throw new AppError(409, "That request was already answered.");
       audit(this.db, { actor: "owner", action: `approval.${status}`, target: id, detail: { kind: row.kind, tier: row.tier, summary: row.summary } });
     };
+    /** What came of an approved action, kept with the approval. */
+    const record = (result: string) => this.db.prepare("UPDATE approvals SET result = ? WHERE id = ?").run(result, id);
     const note = (text: string) => conversationId && this.append(conversationId, { role: "system", text, sensitivity: "normal" });
     let turn: TurnResult | null = null;
 
     if (decision === "deny") {
-      close("denied", "");
+      answer("denied");
+      record("");
       note(row.kind === "tool" ? `Not done: ${row.summary}.` : "Not sent. Ask again without the sensitive part, or set up a local model.");
     } else if (row.kind === "tool") {
       const action = JSON.parse(row.action) as { tool: string; input: unknown };
@@ -792,6 +833,7 @@ export class Helios {
       // from here until the continued turn is over.
       this.busy = true;
       try {
+        answer("approved");
         if (tool && parsed?.success) {
           if (tool.reach === "web") this.setState("browsing");
           const context = this.toolContext(conversationId ?? "", facts, true);
@@ -815,7 +857,7 @@ export class Helios {
             if (!(error instanceof AppError)) this.log.error(tool.reach === "web" ? `Tool ${tool.name} failed (${(error as Error).name}).` : `Tool ${tool.name} failed: ${(error as Error).stack ?? error}`);
           }
         }
-        close("approved", result);
+        record(result);
         if (ok) audit(this.db, { actor: "helios", action: "tool.run", target: action.tool, detail: { tier: row.tier, approval: id } });
         note(ok ? `Done: ${row.summary}.` : `Could not do it: ${result}`);
         if (fetched && conversationId && tool) {
@@ -833,7 +875,8 @@ export class Helios {
       }
     } else {
       // Cloud approval: the held turn continues, now allowed to use the cloud model.
-      close("approved", "");
+      answer("approved");
+      record("");
       if (conversationId) {
         this.busy = true;
         try {
@@ -861,11 +904,27 @@ export class Helios {
       models.push({ id: provider.id, role: provider.role, model: provider.model, location: provider.location, available: await provider.available() });
     }
     const budget = budgetStatus(this.db, this.instance.config, this.now());
+    const enabled = this.instance.config.ai.cloud.allowed;
+    const cloudModels = this.providers.filter((provider) => provider.location === "cloud");
+    const described = cloudModels[0]?.describe?.() ?? null;
+    // The first thing that stands in the way, in the order the owner would deal with it.
+    const problem = !enabled
+      ? "cloud models are switched off"
+      : cloudModels.length === 0
+        ? "no cloud model is part of this installation"
+        : (described?.problem ?? (models.some((model) => model.location === "cloud" && model.available) ? null : "the cloud model is not available"));
     return {
       state: this.state,
       models,
       budget: { spentEur: budget.spentEur + budget.reservedEur, warnEur: budget.warnEur, capEur: budget.capEur, state: budget.state },
-      cloudEnabled: this.instance.config.ai.cloud.enabled,
+      cloudEnabled: enabled,
+      cloud: {
+        enabled,
+        ready: problem === null && budget.state !== "capped",
+        service: described?.service ?? null,
+        models: cloudModels.map((provider) => provider.model),
+        problem: problem ?? (budget.state === "capped" ? "this month's cloud budget is used up" : null),
+      },
       web: this.web?.status() ?? { enabled: false, ready: false, service: null, confirmEvery: false, problem: "web access is not set up in this installation" },
     };
   }

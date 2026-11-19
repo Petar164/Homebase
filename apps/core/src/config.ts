@@ -57,8 +57,24 @@ const configSchema = z.object({
         .prefault({}),
       cloud: z
         .object({
-          /** The data-policy switch. False: nothing is ever sent to a cloud model. */
-          enabled: z.boolean().default(true),
+          /**
+           * The data-policy switch. False: nothing is ever sent to a cloud
+           * model, whether or not a key is set up. Off until the owner turns
+           * it on (from the screen, which asks for the password, or here).
+           *
+           * Earlier versions had a switch called `enabled` that was on unless
+           * someone turned it off, and they wrote it into this file whenever
+           * any setting was saved. A "true" found under that name was never
+           * the owner's decision, so that name is no longer read at all.
+           */
+          allowed: z.boolean().default(false),
+          /**
+           * Another address than Anthropic's own to send requests to: a
+           * gateway, or a stand-in on this machine for a test. Empty means
+           * Anthropic. The API key goes wherever this points, so it must be
+           * an https address, or this machine itself.
+           */
+          baseUrl: z.string().default(""),
           /** Hard reasoning, complex planning, analysis. */
           strongModel: z.string().default("claude-sonnet-5-5"),
           /** Extraction, classification, summaries, background work. */

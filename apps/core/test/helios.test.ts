@@ -43,8 +43,10 @@ class ScriptedProvider implements ModelProvider {
 
 const call = (name: string, input: unknown, id = "c1") => ({ id, name, input });
 
-async function setup(providers: ModelProvider[] = [new StandInProvider()]): Promise<{ instance: Instance; helios: Helios; events: string[] }> {
+/** `cloud: true` stands for an owner who has switched cloud models on. They are off in a fresh installation. */
+async function setup(providers: ModelProvider[] = [new StandInProvider()], options: { cloud?: boolean } = {}): Promise<{ instance: Instance; helios: Helios; events: string[] }> {
   const instance = track(await openInstance({ dataDir: tempDir() }));
+  if (options.cloud) instance.config.ai.cloud.allowed = true;
   const bus = new EventBus();
   const events: string[] = [];
   bus.subscribe((event) => events.push(event.type === "state" ? `state:${event.state}` : event.type));
@@ -231,8 +233,11 @@ describe("which model answers", () => {
     expect(costMicros(config, "claude-sonnet-5-5", { inputTokens: 1_000_000, outputTokens: 0 })).toBe(2_000_000);
     expect(costMicros(config, "claude-haiku-5-5", { inputTokens: 200_000, outputTokens: 1000 })).toBe(200_000 * 0.5 + 1000 * 2.5); // the higher rate above 100K tokens
     expect(costMicros(config, "some-new-model", { inputTokens: 0, outputTokens: 1000 })).toBe(20_000); // unknown is never free
-    // The estimate assumes the whole output allowance is used.
-    expect(estimateMicros(config, "claude-sonnet-5-5", 3000, 8000)).toBe(1000 * 2 + 8000 * 10);
+    // The estimate assumes the whole output allowance is used, and the whole prompt written to the cache (a quarter dearer).
+    expect(estimateMicros(config, "claude-sonnet-5-5", 3000, 8000)).toBe(1000 * 2 * 1.25 + 8000 * 10);
+    // One request answered in two attempts (a model declined, another took over): both are on the bill, each at its own price.
+    const twoAttempts = { inputTokens: 1000, outputTokens: 100, attempts: [{ model: "claude-sonnet-5-5", inputTokens: 1000, outputTokens: 50 }, { model: "claude-opus-5-5", inputTokens: 1000, outputTokens: 100, cacheWriteTokens: 1000 }] };
+    expect(costMicros(config, "claude-opus-5-5", twoAttempts)).toBe(1000 * 2 + 50 * 10 + (1000 * 4 * 1.25 + 100 * 20));
   });
 });
 
@@ -248,7 +253,7 @@ describe("the cloud budget", () => {
 
   it("does not send money data to the cloud until the owner approves that conversation", async () => {
     const model = cloudOnly([{ toolCalls: [call("get_money_summary", { month: "2026-11" })] }, { text: "You made one sale." }]);
-    const { instance, helios } = await setup([model]);
+    const { instance, helios } = await setup([model], { cloud: true });
 
     const turn = await helios.handleMessage("How did the shop do this month?");
     // One call went out, before anything sensitive was in the conversation.
@@ -268,7 +273,7 @@ describe("the cloud budget", () => {
 
   it("stops cloud calls at the monthly cap and says so", async () => {
     const model = cloudOnly([{ text: "one" }, { text: "two" }]);
-    const { instance, helios } = await setup([model]);
+    const { instance, helios } = await setup([model], { cloud: true });
     cheapPrices(instance);
     instance.config.ai.cloud.budget.capEur = 0.015; // room for the first call's reservation, not for a second
     await helios.handleMessage("First");
@@ -283,7 +288,7 @@ describe("the cloud budget", () => {
   it("answers locally instead when the cap is reached", async () => {
     const cloud = cloudOnly([{ text: "from the cloud" }]);
     const local = new ScriptedProvider("local", "local", [{ text: "from this machine" }]);
-    const { instance, helios } = await setup([cloud, local]);
+    const { instance, helios } = await setup([cloud, local], { cloud: true });
     instance.config.ai.cloud.budget.capEur = 0;
     const turn = await helios.handleMessage("Analyse the trade-offs between the two plans");
     expect(cloud.requests).toHaveLength(0);
@@ -294,6 +299,7 @@ describe("the cloud budget", () => {
     const dataDir = tempDir();
     const first = track(await openInstance({ dataDir }));
     cheapPrices(first);
+    first.config.ai.cloud.allowed = true;
     await new Helios({ instance: first, providers: [cloudOnly([{ text: "one" }])], bus: new EventBus(), log: silentLogger }).handleMessage("First");
     const before = budgetStatus(first.db, first.config).spentEur;
     expect(before).toBeGreaterThan(0);
@@ -328,7 +334,7 @@ describe("the cloud budget", () => {
 
   it("warns once when spending passes the warning level", async () => {
     const model = cloudOnly([{ text: "one" }, { text: "two" }, { text: "three" }]);
-    const { instance, helios } = await setup([model]);
+    const { instance, helios } = await setup([model], { cloud: true });
     cheapPrices(instance);
     instance.config.ai.cloud.budget.warnEur = 0.005;
     const first = await helios.handleMessage("First");
@@ -344,7 +350,7 @@ describe("when a model fails", () => {
   it("falls back to another model without damaging the conversation", async () => {
     const local = new ScriptedProvider("local", "local", [{ text: "local again" }]);
     const light = new ScriptedProvider("light", "cloud", [{ text: "the cloud stepped in" }], "light");
-    const { instance, helios } = await setup([local, light]);
+    const { instance, helios } = await setup([local, light], { cloud: true });
     local.failWith = new Error("connection refused, prompt was: What is due?");
 
     const turn = await helios.handleMessage("What is due?");
@@ -462,7 +468,7 @@ describe("memory", () => {
       { text: "Revenue was zero." },
       { toolCalls: [call("search_conversations", { query: "revenue" })] },
     ], "strong");
-    const { helios } = await setup([cloud]);
+    const { helios } = await setup([cloud], { cloud: true });
     const first = await helios.handleMessage("How much revenue this month?");
     await helios.decide(first.approvals[0]?.id as string, "approve", null); // the first conversation is approved and answered
 

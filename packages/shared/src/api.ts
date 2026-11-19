@@ -143,14 +143,29 @@ export type Approval = {
   expiresAt: string;
 };
 
+/** Whether HELIOS may send a conversation to a cloud model, and whether it could right now. */
+export type CloudStatus = {
+  /** The owner's switch. Off until the owner turns it on. */
+  enabled: boolean;
+  /** True when a cloud model could be asked right now: switched on, a key present, room in the budget. */
+  ready: boolean;
+  /** Who a conversation would be sent to, by name. */
+  service: string | null;
+  /** The cloud models that are set up, the stronger one first. */
+  models: string[];
+  /** Why it is not ready, in plain words. */
+  problem: string | null;
+};
+
 export type HeliosStatus = {
   state: HeliosState;
   /** The models HELIOS could use. `role` is what each one is for. */
   models: { id: string; role: "local" | "strong" | "light" | "standin"; model: string; location: "local" | "cloud"; available: boolean }[];
   /** Cloud spending this calendar month, in euros, counted on the safe side. */
   budget: { spentEur: number; warnEur: number; capEur: number; state: "ok" | "warning" | "capped" };
-  /** False when the owner switched cloud models off. */
+  /** False while cloud models are switched off. The same as `cloud.enabled`. */
   cloudEnabled: boolean;
+  cloud: CloudStatus;
   web: WebStatus;
 };
 

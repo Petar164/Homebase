@@ -36,6 +36,8 @@ export type TurnFacts = {
   ownerTexts: string[];
   /** True once text from the web was read in this turn. From then on nothing is changed on a standing permission. */
   webRead: boolean;
+  /** True once a model failed in this turn and another took over. From then on nothing is changed on a standing permission either. */
+  modelFailed: boolean;
   /** True once a Home Base record was read in this turn. */
   recordsRead: boolean;
   /** The text of Home Base records this conversation has read. */

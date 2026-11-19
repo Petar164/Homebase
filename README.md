@@ -41,6 +41,11 @@ Home Base is the whole system. HELIOS is the assistant inside it.
   sources that are links on screen, and says so when the web fails. What a
   request may carry out of the machine is decided by fixed rules, and
   anything that could be private waits for a yes. It needs a search key.
+- **Claude as an optional cloud model, off until switched on.** Hard
+  questions can go to Claude through Anthropic's API, inside a monthly
+  limit in euros, and never with sensitive records unless you said yes to
+  that conversation. It needs its own API key; a Claude subscription does
+  not include API use. Not yet run against the real API.
 
 ## How it is built
 
@@ -65,6 +70,7 @@ them.
 | [Roadmap](docs/ROADMAP.md) | Phases, acceptance criteria, risks, current state |
 | [AI and voice stack](docs/AI-VOICE-STACK.md) | The models, routing, budget, measurements, and what is unverified |
 | [Web access](docs/WEB-ACCESS.md) | Searching and reading the web: the flow, the search service, what leaves the machine, setup |
+| [Claude as a cloud model](docs/CLAUDE-API.md) | The optional cloud model: setup, the switch, what is sent, what it costs, failures |
 | [Laptop setup](docs/LAPTOP-SETUP.md) | The plan for the first session on the Windows machine |
 
 ## Run it
@@ -100,6 +106,8 @@ npm run homebase -- import <export.json>
 npm run homebase -- web status
 npm run homebase -- web check <words to search for>
 npm run homebase -- web read <https address>
+npm run homebase -- cloud status
+npm run homebase -- cloud check
 ```
 
 Stop the core before `restore`, `import` and `owner set-password`.

@@ -1,7 +1,7 @@
 import type { Config } from "../config.ts";
 import { type Db, transaction } from "../db/open.ts";
 import { newId, nowIso } from "../util.ts";
-import type { ModelProvider, ProviderRole, Sensitivity } from "./types.ts";
+import type { AttemptUsage, ChatResponse, ModelProvider, ProviderRole, Sensitivity } from "./types.ts";
 
 // Which model answers, whether a request may leave this machine, and what
 // it may cost. Every decision here is a fixed rule, not a model's judgement,
@@ -17,7 +17,8 @@ import type { ModelProvider, ProviderRole, Sensitivity } from "./types.ts";
 // then the local one.
 //
 // A cloud model is only ever used when ALL of these hold:
-//   - cloud use is switched on (the data-policy switch)
+//   - cloud use is switched on (the data-policy switch, off until the
+//     owner turns it on; a key alone does not switch anything on)
 //   - this month's budget has room for the call
 //   - nothing labelled "secret" is involved (that never goes to any model)
 //   - nothing labelled "sensitive" is involved, or the owner approved
@@ -88,6 +89,9 @@ export async function chooseProvider(input: RouteInput): Promise<Route> {
         : null;
   const needsApproval = input.sensitivity === "sensitive" && !input.egressApproved;
   const useLocal = (reason: string): Route | null => (local ? { kind: "use", provider: local, reason } : null);
+  // A cloud model that was tried in this turn and failed is not "not set up".
+  const strongFailed = input.providers.some((provider) => provider.role === "strong" && input.exclude?.has(provider.id));
+  const noStrong = strongFailed ? "the cloud model could not answer" : "no cloud model is set up";
 
   let result: Route | null = null;
   if (input.purpose === "background") {
@@ -106,12 +110,12 @@ export async function chooseProvider(input: RouteInput): Promise<Route> {
         ? { kind: "needs_approval", provider: strong, reason: "you asked for stronger reasoning, and this conversation holds sensitive content" }
         : { kind: "use", provider: strong, reason: "you asked for stronger reasoning" };
     }
-    result = useLocal(`the stronger model was not used: ${blocked ?? "no cloud model is set up"}`);
+    result = useLocal(`the stronger model was not used: ${blocked ?? noStrong}`);
   } else if (complex && input.prefer !== "local") {
     // Rule 2. Sensitive content does not trigger a question here: the local
     // model answers, and the owner can still ask for the stronger one.
     if (strong && !blocked && !needsApproval) return { kind: "use", provider: strong, reason: "a long or analytical request" };
-    result = useLocal(blocked ? `kept local: ${blocked}` : needsApproval ? "kept local: sensitive content stays on this machine" : "a long or analytical request, and no cloud model is set up");
+    result = useLocal(blocked ? `kept local: ${blocked}` : needsApproval ? "kept local: sensitive content stays on this machine" : `a long or analytical request, and ${noStrong}`);
     if (!result && strong && !blocked) return { kind: "needs_approval", provider: strong, reason: "this conversation holds sensitive content, and no local model is running" };
   } else if (input.prefer === "cloud" && light && !blocked && !needsApproval) {
     return { kind: "use", provider: light, reason: "an ordinary request, and cloud models are preferred" };
@@ -145,19 +149,33 @@ function priceFor(config: Config, model: string, inputTokens: number): { input: 
   return { input: (large && price.inputAbove100k) || price.input, output: (large && price.outputAbove100k) || price.output };
 }
 
-/** The most a call can cost, in millionths of a dollar: the whole prompt plus the full output allowance. */
+/** Writing to the provider's cache is billed this much above the normal input rate. */
+const CACHE_WRITE_SURCHARGE = 0.25;
+
+/**
+ * The most a call can cost, in millionths of a dollar: the whole prompt,
+ * counted as if all of it were written to the cache, plus the full output
+ * allowance.
+ */
 export function estimateMicros(config: Config, model: string, promptBytes: number, maxOutputTokens: number): number {
   // Three bytes per token is on the high side for English, on purpose.
   const inputTokens = Math.ceil(promptBytes / 3);
   const price = priceFor(config, model, inputTokens);
-  return Math.ceil(inputTokens * price.input + maxOutputTokens * price.output);
+  return Math.ceil(inputTokens * price.input * (1 + CACHE_WRITE_SURCHARGE) + maxOutputTokens * price.output);
 }
 
-/** What a call did cost, from the usage the provider reported. */
-export function costMicros(config: Config, model: string, usage: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number }): number {
-  const price = priceFor(config, model, usage.inputTokens);
-  // Writing to the provider's cache is billed 25% above the normal input rate.
-  return Math.ceil(usage.inputTokens * price.input + (usage.cacheWriteTokens ?? 0) * price.input * 0.25 + usage.outputTokens * price.output);
+/**
+ * What a call did cost, from the usage the provider reported. When the
+ * provider answered in more than one attempt (one model declined, another
+ * took over), every attempt is counted, each at its own model's price.
+ */
+export function costMicros(config: Config, model: string, usage: ChatResponse["usage"]): number {
+  const one = (attempt: AttemptUsage): number => {
+    const price = priceFor(config, attempt.model, attempt.inputTokens);
+    return attempt.inputTokens * price.input + (attempt.cacheWriteTokens ?? 0) * price.input * CACHE_WRITE_SURCHARGE + attempt.outputTokens * price.output;
+  };
+  const attempts = usage.attempts?.length ? usage.attempts : [{ model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cacheWriteTokens: usage.cacheWriteTokens }];
+  return Math.ceil(attempts.reduce((sum, attempt) => sum + one(attempt), 0));
 }
 
 export function microsToEur(config: Config, micros: number): number {
@@ -210,11 +228,19 @@ export function reserve(db: Db, config: Config, call: Call, estimate: number, no
   });
 }
 
-/** Replaces a reservation with what really happened. */
-export function settle(db: Db, reservationId: string, outcome: { sent: true; tokensIn: number; tokensOut: number; costMicros: number } | { sent: false }): void {
+/**
+ * Replaces a reservation with what really happened.
+ *
+ * A call that failed before the provider began to answer cost nothing. One
+ * that failed after that (`mayBeBilled`) may be on the bill although
+ * nothing usable came back, and nobody here knows for how much. It is then
+ * counted at its full estimate, marked as an estimate: the same rule as for
+ * a call cut short by a crash (settleAbandoned).
+ */
+export function settle(db: Db, reservationId: string, outcome: { sent: true; tokensIn: number; tokensOut: number; costMicros: number } | { sent: false; mayBeBilled?: boolean }): void {
   transaction(db, () => {
-    const row = db.prepare("SELECT provider, model, purpose, max_sensitivity, bytes, conversation_id FROM cloud_reservations WHERE id = ?").get(reservationId) as
-      | { provider: string; model: string; purpose: string; max_sensitivity: Sensitivity; bytes: number; conversation_id: string | null }
+    const row = db.prepare("SELECT provider, model, purpose, max_sensitivity, bytes, estimate_micros, conversation_id FROM cloud_reservations WHERE id = ?").get(reservationId) as
+      | { provider: string; model: string; purpose: string; max_sensitivity: Sensitivity; bytes: number; estimate_micros: number; conversation_id: string | null }
       | undefined;
     if (!row) return;
     db.prepare("DELETE FROM cloud_reservations WHERE id = ?").run(reservationId);
@@ -225,7 +251,11 @@ export function settle(db: Db, reservationId: string, outcome: { sent: true; tok
       maxSensitivity: row.max_sensitivity,
       bytes: row.bytes,
       conversationId: row.conversation_id,
-      ...(outcome.sent ? { outcome: "sent", tokensIn: outcome.tokensIn, tokensOut: outcome.tokensOut, costMicros: outcome.costMicros } : { outcome: "failed" }),
+      ...(outcome.sent
+        ? { outcome: "sent", tokensIn: outcome.tokensIn, tokensOut: outcome.tokensOut, costMicros: outcome.costMicros }
+        : outcome.mayBeBilled
+          ? { outcome: "sent", costMicros: row.estimate_micros, estimated: true }
+          : { outcome: "failed" }),
     });
   });
 }

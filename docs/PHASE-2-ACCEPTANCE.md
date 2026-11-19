@@ -174,7 +174,7 @@ is not in the figure.
 
 | # | What | State |
 |---|---|---|
-| H1 | **One real call to Claude.** Needs an API key in `.env`. One request that routes to Sonnet and one to Haiku: streaming works, the stored usage and cost match the reservation, the fallback option is accepted | Outstanding: no key exists. Never run anywhere |
+| H1 | **One real call to Claude.** Needs an API key in `.env`. One request that routes to Sonnet and one to Haiku: streaming works, the stored usage and cost match the reservation, the fallback option is accepted. How: section 10 of the setup plan and the checks C1 to C8 in [CLAUDE-API.md](CLAUDE-API.md) | Outstanding: no key exists. Never run anywhere |
 | H2 | `npm test` and `uv run pytest` pass on Windows; the speech models download and verify; the pytest run afterwards skips nothing | Not run (setup plan, sections 1 and 7) |
 | H3 | Ending Ollama, then the voice worker, in Task Manager while HELIOS is in use | Not run. Expected: another model answers; the worker is started again after 1 second |
 | H4 | Closing the browser does not stop HELIOS (setup plan, section 5) | Not run |

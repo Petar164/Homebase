@@ -31,9 +31,11 @@ provider is another small file.
 
 ## What was actually tested
 
-**Automated tests: 201 in the core (80 of them for web access, see
-[WEB-ACCESS.md](WEB-ACCESS.md), and 13 for the screen's files and the
-login check), 75 in the voice worker, all passing on the Mac.**
+**Automated tests: 230 in the core (80 of them for web access, see
+[WEB-ACCESS.md](WEB-ACCESS.md), 13 for the screen's files and the login
+check, and 29 for Claude as a cloud model, see
+[CLAUDE-API.md](CLAUDE-API.md)), 75 in the voice worker, all passing on
+the Mac.**
 They cover each acceptance point of the brief:
 
 | # | Requirement | Where it is tested |
@@ -192,10 +194,11 @@ it on screen. HELIOS can also be asked ("which model answered that?").
 
 Background work (extraction, summaries) goes to the light cloud model,
 then the local one. A model that fails is skipped for the rest of that
-turn and the next allowed one answers.
+turn and the next allowed one answers. A cloud model that fails says why.
 
 A cloud model is used only when all of these hold: cloud use is switched
-on (`ai.cloud.enabled`); this month's budget has room; nothing labelled
+on (`ai.cloud.allowed`, which is off until you turn it on from the screen;
+a key alone switches nothing on); this month's budget has room; nothing labelled
 secret is involved; and nothing labelled sensitive is involved, or you
 approved sending exactly that conversation. When a rule blocks the cloud,
 the local model answers and the reason says so. Tool results and recalled
@@ -223,11 +226,14 @@ key is labelled secret and shown to no model.
 
 **What it is likely to cost** (worked out from the prices above, not
 measured): a typical Sonnet answer with HELIOS's instructions and tools is
-about 1,500 tokens in and 300 out, which is $0.006, counted here as
-€0.007. Twenty such answers a day is about €4.50 a month. A million tokens
-of background reading by Haiku is $0.10. Local answers cost nothing. On
-those figures the €20 cap is not reached in normal use; the reservation
-rule means the last €0.10 or so of the cap is never spent.
+about 1,700 tokens in (2,250 the cautious way the budget counts; the size
+of HELIOS's own requests was measured) and 400 out, which is about $0.0085,
+counted here as €0.01. Ten such answers a day is about €3 a month. A
+million tokens of background reading by Haiku is $0.10. Local answers cost
+nothing. On those figures the €20 cap is not reached in normal use; the
+reservation rule means the last €0.10 or so of the cap is never spent. The
+table per question, and what is counted on the safe side, is in
+[CLAUDE-API.md](CLAUDE-API.md#what-it-costs).
 
 A Claude subscription does not include API use. An API key and its billing
 are set up separately at console.anthropic.com, and a spending limit can be

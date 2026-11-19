@@ -29,8 +29,8 @@ try {
   const providers = [
     new StandInProvider(),
     new OllamaProvider({ baseUrl: ai.local.baseUrl, model: ai.local.model, contextTokens: ai.local.contextTokens, keepAlive: ai.local.keepAlive, think: ai.local.think }),
-    new ClaudeProvider({ role: "strong", model: ai.cloud.strongModel, effort: ai.cloud.effort.strong, maxOutputTokens: ai.cloud.maxOutputTokens.strong }),
-    new ClaudeProvider({ role: "light", model: ai.cloud.lightModel, effort: ai.cloud.effort.light, maxOutputTokens: ai.cloud.maxOutputTokens.light }),
+    new ClaudeProvider({ role: "strong", model: ai.cloud.strongModel, effort: ai.cloud.effort.strong, maxOutputTokens: ai.cloud.maxOutputTokens.strong, baseUrl: ai.cloud.baseUrl }),
+    new ClaudeProvider({ role: "light", model: ai.cloud.lightModel, effort: ai.cloud.effort.light, maxOutputTokens: ai.cloud.maxOutputTokens.light, baseUrl: ai.cloud.baseUrl }),
   ];
   // The voice worker is a separate Python program, started and restarted by
   // the core (see voice/service.ts). It is only started when voice is
@@ -42,12 +42,21 @@ try {
   log.info(voice ? "Voice is on: the voice worker is starting." : "Voice is off (set voice.enabled in config.json to turn it on).");
   const web = (await helios.status()).web;
   log.info(!web.enabled ? "Web access is off (switch it on from the screen, or set web.enabled in config.json)." : web.ready ? `Web access is on. Searches go to ${web.service}.` : `Web access is on, but ${web.problem}.`);
+  const { cloud, budget } = await helios.status();
+  log.info(
+    !cloud.enabled
+      ? "Cloud models are off (switch them on from the screen, or set ai.cloud.allowed in config.json)."
+      : cloud.ready
+        ? `Cloud models are on. Conversations may go to ${cloud.service} (${cloud.models.join(", ")}), up to €${budget.capEur} a month.`
+        : `Cloud models are on, but ${cloud.problem}.`,
+  );
   await app.listen({ host, port });
 
   log.info(`Home Base ${APP_VERSION} is running at http://${host === "127.0.0.1" ? "localhost" : host}:${port}`);
   log.info(`Data folder: ${instance.paths.root}`);
   if (!ownerExists(instance.db)) log.warn("No owner account yet. Create one with:  npm run homebase -- owner set-password");
-  const ready = (await helios.status()).models.filter((model) => model.available && model.id !== "standin");
+  // A cloud model with a key is only named as usable when the owner has switched cloud models on.
+  const ready = (await helios.status()).models.filter((model) => model.available && model.id !== "standin" && (model.location === "local" || cloud.enabled));
   log.info(ready.length > 0 ? `HELIOS models: ${ready.map((model) => `${model.model} (${model.location})`).join(", ")}` : "HELIOS has no model connected yet; the stand-in answers.");
 
   const backupCycle = () => runBackupCycle(instance, log).catch((error: Error) => log.error(`Backup cycle failed: ${error.message}`));

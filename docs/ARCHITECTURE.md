@@ -5,7 +5,8 @@ its voice, its reasoning and the way the screen behaves. This document
 describes how the system is put together and why.
 
 Related documents: [data model](DATA-MODEL.md), [persistence](PERSISTENCE.md),
-[security](SECURITY.md), [web access](WEB-ACCESS.md), [roadmap](ROADMAP.md).
+[security](SECURITY.md), [web access](WEB-ACCESS.md),
+[Claude as a cloud model](CLAUDE-API.md), [roadmap](ROADMAP.md).
 
 ## The shape of the system
 
@@ -125,7 +126,7 @@ part of the system depends on one vendor.
 | Role | Model | Notes |
 |---|---|---|
 | Local reasoning, the default | `qwen3.5:4b` through Ollama | Ordinary conversation and Home Base questions. Runs on the GPU |
-| Cloud, hard reasoning | `claude-sonnet-5-5` through the official SDK | Long or analytical requests, or when asked. Billed per use, separately from any Claude subscription |
+| Cloud, hard reasoning | `claude-sonnet-5-5` through the official SDK | Long or analytical requests, or when asked. Optional: off until the owner switches cloud models on ([CLAUDE-API.md](CLAUDE-API.md)). Billed per use, separately from any Claude subscription |
 | Cloud, light work | `claude-haiku-5-5` | Extraction, classification, summaries, background passes |
 | Local embeddings (phase 3) | A small embedding model through Ollama | Memory search never needs the cloud |
 | Stand-in | Fixed rules | Answers only while no real model is connected |

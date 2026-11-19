@@ -1,4 +1,4 @@
-import type { Approval, ConversationMessage, ConversationSummary, CoreEvent, HeliosStatus, TurnResult, WebStatus } from "@homebase/shared";
+import type { Approval, CloudStatus, ConversationMessage, ConversationSummary, CoreEvent, HeliosStatus, TurnResult, WebStatus } from "@homebase/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Helios } from "../ai/helios.ts";
@@ -32,6 +32,7 @@ const voiceSettingsSchema = z
   })
   .partial();
 const webSettingsSchema = z.object({ enabled: z.boolean(), confirmEvery: z.boolean() }).partial();
+const cloudSettingsSchema = z.object({ enabled: z.boolean() });
 const VOICE_OFF: VoiceStatus = { enabled: false, worker: "off", state: "idle", wakeAvailable: false, wakeEnabled: false, devices: { inputs: [], outputs: [] }, lastError: null, restarts: 0, last: null };
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
@@ -138,6 +139,22 @@ export function registerHeliosRoutes(app: FastifyInstance, helios: Helios, bus: 
     saveConfig(instance.paths, instance.config);
     audit(instance.db, { actor: "owner", action: "web.settings", detail: { enabled: settings.enabled, confirmEvery: settings.confirmEvery } });
     return (await helios.status()).web;
+  });
+
+  // The switch for cloud models. On lets conversations leave this machine,
+  // so it needs the password again, like any change that widens what HELIOS
+  // may do. Off needs nothing and works at once. A key in the .env file
+  // does not switch anything on by itself.
+  app.put("/api/ai/cloud", async (request): Promise<CloudStatus> => {
+    const input = parse(cloudSettingsSchema, request.body);
+    const settings = instance.config.ai.cloud;
+    if (input.enabled && !settings.allowed) requireElevated(request.session);
+    if (input.enabled !== settings.allowed) {
+      settings.allowed = input.enabled;
+      saveConfig(instance.paths, instance.config);
+      audit(instance.db, { actor: "owner", action: "cloud.settings", detail: { enabled: settings.allowed } });
+    }
+    return (await helios.status()).cloud;
   });
 
   app.get("/api/approvals", async (): Promise<Approval[]> => helios.pendingApprovals());

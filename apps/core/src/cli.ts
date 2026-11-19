@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { ClaudeProvider } from "./ai/claude.ts";
+import { costMicros, microsToEur } from "./ai/policy.ts";
+import { ProviderError } from "./ai/types.ts";
 import { readInstanceId, restoreSnapshot } from "./backup/restore.ts";
 import { createSnapshot, initMirror, mirrorSnapshot, verifySnapshot } from "./backup/snapshot.ts";
 import { BackupStore } from "./backup/store.ts";
@@ -36,6 +39,8 @@ const HELP = `Usage: npm run homebase -- <command>
   web status                          whether HELIOS may use the web, and which search service is set up
   web check <words to search for>     run one live search with the key that is set up, and show what comes back
   web read <https address>            fetch one page the way HELIOS does, and show what it would read
+  cloud status                        whether HELIOS may use Claude, whether a key is set, and the spending limits
+  cloud check [strong] [--yes]        send one short, billed test question to Claude, and show what it cost
 `;
 
 const dataDir = defaultDataDir();
@@ -94,7 +99,7 @@ async function main(args: string[]): Promise<void> {
   const words = args.filter((arg, index) => !arg.startsWith("--") && index !== fromValueIndex);
   const [command, second, third] = words;
 
-  switch (`${command ?? ""} ${command === "backups" || command === "owner" || command === "audit" || command === "web" ? (second ?? "") : ""}`.trim()) {
+  switch (`${command ?? ""} ${command === "backups" || command === "owner" || command === "audit" || command === "web" || command === "cloud" ? (second ?? "") : ""}`.trim()) {
     case "status": {
       console.log(`Data folder:  ${paths.root}`);
       if (!existsSync(paths.dbFile)) return console.log("No Home Base here yet. It is created the first time the core starts.");
@@ -275,6 +280,57 @@ async function main(args: string[]): Promise<void> {
         }
       } catch (error) {
         if (error instanceof WebError) fail(`It did not work: ${error.message}.`);
+        throw error;
+      }
+      return;
+    }
+
+    // The cloud commands read the settings file and the key only. Like the
+    // web commands they do not open the database.
+    case "cloud status": {
+      const { cloud } = loadConfig(paths).ai;
+      const strong = new ClaudeProvider({ role: "strong", model: cloud.strongModel, baseUrl: cloud.baseUrl });
+      const { service, problem } = strong.describe();
+      console.log(`Cloud models:   ${cloud.allowed ? "on" : "off (switch them on from the screen; a key alone switches nothing on)"}`);
+      console.log(`Sent to:        ${service}`);
+      // Only whether a usable key is there. No part of it is ever printed.
+      console.log(`API key:        ${problem ? `not usable: ${problem}` : "set"}`);
+      console.log(`Strong model:   ${cloud.strongModel} (effort ${cloud.effort.strong}, at most ${cloud.maxOutputTokens.strong} tokens per answer)`);
+      console.log(`Light model:    ${cloud.lightModel} (effort ${cloud.effort.light}, at most ${cloud.maxOutputTokens.light} tokens per answer)`);
+      console.log(`Monthly limit:  €${cloud.budget.capEur}, with a warning at €${cloud.budget.warnEur}. What was spent so far is on the screen.`);
+      for (const [model, price] of Object.entries(cloud.pricePerMTok)) {
+        console.log(`Price counted:  ${model}: $${price.input} in, $${price.output} out, per million tokens`);
+      }
+      if (problem) console.log("Put ANTHROPIC_API_KEY in the .env file next to package.json (docs/CLAUDE-API.md). A Claude subscription does not include API use.");
+      return;
+    }
+
+    case "cloud check": {
+      // Run by the owner, on purpose, with a fixed question: nothing from
+      // Home Base is in it. It is the one request that is not counted in
+      // the monthly total, so its cost is shown here instead.
+      const config = loadConfig(paths);
+      const { cloud } = config.ai;
+      const role = third === "strong" ? "strong" : "light";
+      const provider = new ClaudeProvider({ role, model: role === "strong" ? cloud.strongModel : cloud.lightModel, effort: "low", maxOutputTokens: 1024, baseUrl: cloud.baseUrl });
+      const { service, problem } = provider.describe();
+      if (problem) fail(`Not sent: ${problem}.`);
+      console.log(`This sends one short test question to ${provider.model} at ${service}. Anthropic bills it: one cent at the very most.`);
+      if (!flags.has("--yes") && (await ask("Send it? (yes/no) ")).trim().toLowerCase() !== "yes") fail("Nothing was sent.");
+      const started = Date.now();
+      try {
+        const answer = await provider.chat({
+          system: "This is a connection test. Answer in one short sentence.",
+          messages: [{ role: "user", text: "Say that the connection works." }],
+          tools: [],
+        });
+        const micros = costMicros(config, answer.model, answer.usage);
+        console.log(`${answer.model} answered in ${Date.now() - started} ms: ${answer.text.trim() || "(no text)"}`);
+        console.log(`Tokens: ${answer.usage.inputTokens} in, ${answer.usage.outputTokens} out.`);
+        console.log(`Cost as the budget counts it: $${(micros / 1_000_000).toFixed(5)}, which is €${microsToEur(config, micros).toFixed(5)}. This one request is not added to the monthly total.`);
+        if (!cloud.allowed) console.log("Cloud models are still switched off for HELIOS. Turn them on from the screen when you want them used.");
+      } catch (error) {
+        if (error instanceof ProviderError) fail(`It did not work: ${error.message}`);
         throw error;
       }
       return;

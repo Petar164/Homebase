@@ -68,16 +68,45 @@ export type ChatRequest = {
   onText?: (delta: string) => void;
 };
 
+/** What one attempt at an answer used, and which model made it. */
+export type AttemptUsage = { model: string; inputTokens: number; outputTokens: number; cacheWriteTokens?: number };
+
 export type ChatResponse = {
   text: string;
   toolCalls: ToolCall[];
   /** Why the model stopped. "refusal" means the provider declined the request. */
   stop: "end" | "tool_use" | "max_tokens" | "refusal";
-  /** cacheWriteTokens are input tokens the provider stored for reuse (billed above the normal rate). */
-  usage: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number };
+  /**
+   * cacheWriteTokens are input tokens the provider stored for reuse (billed
+   * above the normal rate). `attempts` is set when one request was answered
+   * in more than one attempt, each billed by its own model: then the cost is
+   * the sum of those, and the other fields describe the attempt that answered.
+   */
+  usage: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; attempts?: AttemptUsage[] };
   model: string;
   raw?: unknown;
 };
+
+/** The ways a provider can fail to answer, as far as the core tells them apart. */
+export type ProviderFailure = "auth" | "billing" | "permission" | "model" | "rate_limit" | "unavailable" | "timeout" | "network" | "invalid" | "malformed" | "aborted";
+
+/**
+ * A model that could not answer, as what it is. `message` is a sentence for
+ * the owner. It is written here, by this code, and never repeats what the
+ * provider said: a provider's own error text can quote the request.
+ */
+export class ProviderError extends Error {
+  readonly kind: ProviderFailure;
+  /** True when the provider had started on an answer, so the attempt may be charged although nothing usable came back. */
+  readonly billable: boolean;
+
+  constructor(kind: ProviderFailure, message: string, billable = false) {
+    super(message);
+    this.name = "ProviderError";
+    this.kind = kind;
+    this.billable = billable;
+  }
+}
 
 /**
  * What a provider is for. The router picks by role, never by model name:
@@ -97,5 +126,8 @@ export interface ModelProvider {
   readonly model: string;
   /** True when the provider can answer right now (key present, server running). */
   available(): Promise<boolean>;
+  /** For cloud providers: who the conversation is sent to by name, and why that is not possible right now, if it is not. */
+  describe?(): { service: string; problem: string | null };
+  /** Throws a ProviderError when it knows what went wrong; any other error means "it failed". */
   chat(request: ChatRequest): Promise<ChatResponse>;
 }

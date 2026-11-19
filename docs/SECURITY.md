@@ -45,7 +45,7 @@ before acting.
 | Tier | Meaning | Examples | Needs |
 |---|---|---|---|
 | 0 | Read-only, inside Home Base | Read tasks, search memory, show the calendar | Nothing |
-| 1 | Small reversible change inside Home Base | Add a task, mark done, save a note it was asked for | A spoken or on-screen yes, or a standing grant |
+| 1 | Small reversible change inside Home Base | Add a task, mark done, save a note it was asked for | A spoken or on-screen yes, or a standing grant. Always a fresh yes once web text was read in the turn, or once a model failed in it and another took over |
 | 2 | Change outside Home Base, or hard to undo | Create or move files, generate and save a PDF, run a scheduled workflow | Explicit confirmation on screen, or a standing grant |
 | 3 | Sensitive, destructive or visible to others | Send an email, delete files, anything involving money or secrets, install software, push or deploy code, change permissions | **Step-up authentication.** Never voice alone |
 
@@ -72,6 +72,13 @@ question. A grant says: *this* workflow or agent may use *these* tools on
 - Grants expire, can be revoked at once, and every use is logged.
 
 ## Cloud policy: approval
+
+Cloud models are off until the owner switches them on, which needs the
+password again. Switching them off needs nothing. A key in the `.env` file
+does not switch anything on, and neither does a value an earlier version
+left in the settings file. What is sent once they are on, what it costs
+and what happens when the service fails is in
+[CLAUDE-API.md](CLAUDE-API.md).
 
 Everything stored has a sensitivity label: `normal`, `private`, `sensitive`
 or `secret`.
@@ -160,6 +167,10 @@ search) are environment variables, read from a `.env` file that git
 ignores. The rest of the paragraph already holds: no key is written to the
 database, the settings file, a log or an error message, a key is sent only
 to its own service, and the voice worker is started without any of them.
+For Claude, only `ANTHROPIC_API_KEY` counts: the SDK is handed that key
+and Anthropic's own address, and takes no credential or address from its
+surroundings. A value that is plainly the wrong kind (an Admin key, the
+sign-in token of a subscription) is refused before anything is sent.
 
 ## Audit log
 

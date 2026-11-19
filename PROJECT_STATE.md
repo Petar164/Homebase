@@ -11,10 +11,10 @@ the work actually is.
 
 | | |
 |---|---|
-| Current work | Two pieces of work on one branch, both built, tested and committed on the Mac. Web access (Phase 2.5): HELIOS searches the web and reads pages. And a security fix of 19 November 2026: the package that serves the screen's files was brought to a version with the published fixes, and a hole in the login check, found on the way, was closed (section 7). Both wait for the owner's word to push. Web access also waits for a search key and for a run on the laptop |
-| State | The AI and voice stack, the preparation for the acceptance checks and the fix for the Windows test failure are on `main` and pushed. The laptop added one commit on 17 November (`a3e834a`, "Integrate GPT-OSS 20B and improve voice diagnostics"). Web access is built on top of that, on the Mac, and the security fix on top of web access. They are two commits on one branch, **not pushed and not on `main`**: on 19 November the owner approved each as a local step and said not to push, merge or deploy. **Until the second commit gets there, the hole in the login check is still in the code on GitHub and on the laptop** (section 9, point 23). What the laptop has run is known on the Mac only from what the owner said (below) |
-| Branch | `feature/web-access`, made from `main` at `a3e834a` and two commits ahead of it, on the Mac only. Nothing is uncommitted. `main` is the same as `origin/main`. Three older branches exist on the Mac only and hold nothing more: `feature/ai-voice-stack`, `laptop-acceptance`, `fix/http-test-cleanup` |
-| Tests | 201 of 201 in the core (108 before, 80 for web access, 13 for the screen's files and the login check), 75 of 75 in the voice worker, type check clean, the screen builds, `npm audit` finds nothing, all on the Mac |
+| Current work | Claude as an optional cloud model (Phase 2.6), a first version: built and tested on the Mac on 19 November 2026 with stand-ins, committed on its own branch, not pushed. It waits for the owner's word, for an API key, and for a first real request. Before it, the same day: web access (Phase 2.5) and a security fix, both on `main` and pushed. They wait for the laptop to pull them, and web access for a search key |
+| State | The AI and voice stack, the preparation for the acceptance checks and the fix for the Windows test failure are on `main` and pushed. The laptop added one commit on 17 November (`a3e834a`, "Integrate GPT-OSS 20B and improve voice diagnostics"). Web access (`5b2ade0`) and the security fix (`c553742`) were built on top of that on the Mac, and pushed on 19 November 2026 on the owner's yes: `main` is at `c553742`. **The laptop still runs the code from before them, with the fault in the login check, until it pulls** (section 9, point 23). The Claude work is one commit on top of `main`, on the Mac only, **not pushed and not on `main`**: the owner said not to push or merge it. What the laptop has run is known on the Mac only from what the owner said (below) |
+| Branch | `feature/claude-api`, made from `main` at `c553742` and one commit ahead of it, on the Mac only. Nothing is uncommitted. `main` is the same as `origin/main`. Four older branches exist on the Mac only and hold nothing more: `feature/web-access`, `feature/ai-voice-stack`, `laptop-acceptance`, `fix/http-test-cleanup` |
+| Tests | 230 of 230 in the core (108 before, 80 for web access, 13 for the screen's files and the login check, 29 for Claude), 75 of 75 in the voice worker, type check clean, the screen builds, `npm audit` finds nothing, all on the Mac |
 | Next phase | Phase 3 (memory and second brain). **Do not start it until the owner explicitly authorises it** |
 
 Not verified anywhere: a real microphone and speakers (as far as the Mac
@@ -22,8 +22,9 @@ knows), a real Claude call, a web search with a real key, and the laptop's
 model using the web tools.
 
 A session on the laptop starts with `docs/LAPTOP-SETUP.md`. Its section 9
-and `docs/WEB-ACCESS.md` are the part for web access. This file was written
-on the Mac: every result in it is a Mac result.
+and `docs/WEB-ACCESS.md` are the part for web access; its section 10 and
+`docs/CLAUDE-API.md` are the part for Claude, once that commit is there.
+This file was written on the Mac: every result in it is a Mac result.
 
 ### The owner's instruction for web access (18 November 2026)
 
@@ -80,6 +81,36 @@ checks in `docs/PHASE-2-ACCEPTANCE.md`.
   web access working.
 - **Do not modify real data, push, merge or deploy.**
 
+What was done is in section 7. The same evening the owner said yes to
+pushing both commits, and `main` was moved forward to `c553742` and pushed.
+
+### The owner's instruction for Claude (19 November 2026)
+
+- Use the session to make real progress on the next stage: optional Claude
+  API integration, on a separate local branch `feature/claude-api` made
+  from `main`. Do not modify, merge or push `main`.
+- Look at what exists first (the provider interface, the cloud provider,
+  the settings, the routing, tool execution, the approvals) and extend it.
+  Do not build it a second time.
+- A production-quality provider on Anthropic's official SDK. Model
+  answers, conversation context, system prompts, tool calls and errors
+  handled the same way as for every other provider.
+- `gpt-oss:20b` stays HELIOS's default local model. Claude stays optional,
+  and has to be switched on explicitly.
+- Privacy controls for the cloud: explicit opt-in, protection of the key,
+  handling of sensitive context, and safeguards on spending.
+- Tool calls from a cloud model must not get past the existing approvals.
+  **Never repeat a write automatically after a provider failed.**
+- Tests with stand-ins, without a real key. Documents for setup, settings,
+  expected costs, privacy and limits. Do not assume a Claude Max
+  subscription includes API credit.
+- **Do not ask for the API key. Do not enable paid requests.** Do not
+  change web access without need, do not touch real data, do not deploy
+  to Windows, do not push or merge, no unrelated refactoring. Do not touch
+  the Official Style Guide PDF (no such file is in this repository).
+- A coherent, tested piece of work comes before trying to do everything.
+  Commit only what is finished and checked, on `feature/claude-api`.
+
 What was done is in section 7.
 
 ### The owner's instruction for this stage (15 November 2026)
@@ -131,10 +162,11 @@ microphone about two metres away.
 
 | Phase | State |
 |---|---|
-| 1. Foundation | Done on the Mac, pushed. Not yet verified on Windows: its tests ran there once and failed in one file (section 7). Its login check had a hole; the fix is committed on the Mac and not pushed (section 7) |
+| 1. Foundation | Done on the Mac, pushed. Not yet verified on Windows: its tests ran there once and failed in one file (section 7). Its login check had a hole; the fix is on `main` and pushed, and the laptop has it once it pulls (section 7) |
 | 2. HELIOS core | Core done and pushed: conversation, tools with risk tiers, approvals, cloud gate, conversation search, sales with its screen. Not everything in the roadmap's Phase 2 list is finished; see `docs/ROADMAP.md` |
 | AI and voice stack | Done on the Mac, merged and pushed. What is still open is in sections 9 and 11 |
-| 2.5 Web access | Built and tested on the Mac, committed on its own branch, not pushed. Not run with a real search key, with the laptop's model, or on Windows |
+| 2.5 Web access | Built and tested on the Mac, on `main`, pushed. Not run with a real search key, with the laptop's model, or on Windows |
+| 2.6 Claude as an optional cloud model | A first version, built and tested on the Mac with stand-ins, committed on its own branch, not pushed. Never run against the real API |
 | 3. Memory and second brain | Not started |
 | 4. Neural interface (3D brain) | Not started. The screen has a 2D canvas brain as a stand-in |
 | 5. Action and integrations | Not started |
@@ -321,6 +353,41 @@ Full description: `docs/WEB-ACCESS.md`. Code: `apps/core/src/web`,
   tables.
 - One new package: `parse5`, to read HTML.
 
+### Claude as a cloud model
+
+Full description: `docs/CLAUDE-API.md`. Code: `apps/core/src/ai/claude.ts`
+(the provider), `apps/core/src/ai/policy.ts` (rules and budget), the turn
+loop in `apps/core/src/ai/helios.ts`.
+
+- Optional. The local model stays the default; on the laptop that is
+  `gpt-oss:20b`, set in that machine's `config.json` (the default in the
+  code is still `qwen3.5:4b` and was not changed).
+- Off until the owner switches it on: `ai.cloud.allowed`, set by the
+  switch on the main screen (`PUT /api/ai/cloud`, the password again to
+  turn on). The older name `ai.cloud.enabled` is no longer read, because
+  earlier versions wrote "true" under it by themselves.
+- Only `ANTHROPIC_API_KEY` counts. The SDK is given the key and
+  Anthropic's address explicitly and its logging is off.
+  `ai.cloud.baseUrl` can name another address; it must be `https` or this
+  machine.
+- A provider that knows why it failed throws a `ProviderError`
+  (`apps/core/src/ai/types.ts`) with a sentence for the owner and whether
+  the attempt may have been billed. The turn loop writes the sentence into
+  the conversation and lets the next model answer.
+- The budget: the estimate includes the dearer cache write; a call that
+  broke off after the answer began is counted at its full estimate;
+  several billed attempts in one request are all counted
+  (`usage.attempts`).
+- After a model failed in a turn, no change runs on a standing permission
+  for the rest of that turn. An approval's yes is written down before its
+  action runs.
+- The model's view of a conversation begins a fixed number of messages
+  before the owner's latest message (`windowStart`), so it is the same for
+  a whole turn, also after an approval.
+- New on the command line: `cloud status` (sends nothing) and `cloud
+  check` (one billed test question, after asking).
+- No migration and no new package.
+
 ### Acceptance checks and their tools
 
 The checks, the mark for each and the results table: `docs/PHASE-2-ACCEPTANCE.md`.
@@ -355,35 +422,35 @@ confirmed (section 1).
 
 ## 6. Git state
 
-`main` is pushed: `origin/main` is the same commit, `a3e834a`. The history
+`main` is pushed: `origin/main` is the same commit, `c553742`. The history
 is one line, without merge commits. Every push from the Mac was a normal
 one, made after the audit in section 13 and on the owner's yes.
 
-**Two commits are not on `main` and not pushed.** They are on the branch
-`feature/web-access` (made from `a3e834a`), on the Mac only, both made on
-19 November 2026. This file is part of the newer one, so that one's number
-is not written here; `git log -2 feature/web-access` shows both.
+**One commit is not on `main` and not pushed.** It is on the branch
+`feature/claude-api` (made from `c553742`), on the Mac only, made on 19
+November 2026: Claude as an optional cloud model (section 7). This file is
+part of it, so its number is not written here; `git log -1
+feature/claude-api` shows it. It holds 23 files: changes to the provider,
+the rules and budget, the turn loop, the settings, the routes, the command
+line, the screen and the shared types; one new test file
+(`apps/core/test/cloud.test.ts`); one new document (`docs/CLAUDE-API.md`);
+and changes to one existing test file, the key template and eight
+documents. No new package and no change to `package-lock.json`. Nothing
+under `.claude`, `private`, `home-base` or `repos` is part of it, and no
+`.env` file exists. With the owner's yes it reaches the laptop the usual
+way: the audit, `main` moved forward to the branch, a normal push.
 
-| Commit | What |
-|---|---|
-| `5b2ade0` | feat: implement HELIOS live web intelligence. 42 files: the new folder `apps/core/src/web`, three other new source files, two new test files, one new document, and changes to existing files of the core, the screen, the shared types and the documents. One new package, `parse5` |
-| the newest | fix: remediate Fastify static security advisories. 9 files: `apps/core/src/http/server.ts` (the login check, and two settings where the files are served), the new test file `apps/core/test/static.test.ts`, `package.json` of the core and `package-lock.json` (six packages, listed in section 7), and five documents |
-
-Nothing under `.claude`, `private`, `home-base` or `repos` is part of
-either, and no `.env` file exists. With the owner's yes they reach the
-laptop the usual way: the audit, `main` moved forward to the branch, a
-normal push. The two belong together on the way there: the second was made
-on top of the first.
-
-The two newest commits on `main`:
+The four newest commits on `main`:
 
 | Commit | What |
 |---|---|
 | `359f898` | Keep the HTTP tests' shared folder until its server and database are closed. Made on the Mac, pushed on 16 November 2026 on the owner's yes |
 | `a3e834a` | Integrate GPT-OSS 20B and improve voice diagnostics. Made on the laptop on 17 November 2026: `think` in the local model's settings may be `low`, `medium` or `high`; the voice worker names the kind of a text-encoding error. Its git name differs from the one on the Mac's commits; whether that is meant is the owner's to say |
+| `5b2ade0` | feat: implement HELIOS live web intelligence. Web access (Phase 2.5): 42 files, one new package (`parse5`). Made on the Mac on 19 November 2026 |
+| `c553742` | fix: remediate Fastify static security advisories. `@fastify/static` 10.1.12 and the fix for the login check (section 7): 9 files. Made on the Mac and pushed with the one before it on 19 November 2026, on the owner's yes |
 
 The preparation for the acceptance checks is the three commits before
-those. It was made on the branch `laptop-acceptance` and came into `main`
+`359f898`. It was made on the branch `laptop-acceptance` and came into `main`
 on 15 November 2026 by moving `main` forward to it.
 
 | Commit | What |
@@ -421,14 +488,79 @@ Run on 19 November 2026 on the Mac, on what the newest commit holds:
 
 | Command | Result |
 |---|---|
-| `npm test` | 201 passed, 0 failed (11 files) |
+| `npm test` | 230 passed, 0 failed (12 files) |
 | `npm run typecheck` | clean |
 | `npm run build` | the screen builds |
 | `cd apps/voice && uv run pytest` | 75 passed, 0 failed |
 | `npm audit` | found 0 vulnerabilities |
 
-The first three gave the same results after a clean install from the
-lockfile (`npm ci`, 154 packages) in a scratch copy of the code.
+### Claude as a cloud model: what was found, changed and tested
+
+**What was already there.** The provider on Anthropic's official SDK, the
+routing rules, the approval before sensitive content is sent, the budget
+with its reservations, and the egress log were built with the AI and voice
+stack. This step held them against the owner's instruction (section 1)
+and closed what was open. Nothing was built a second time.
+
+| Found | Changed |
+|---|---|
+| Cloud models were on unless switched off. A key in the environment was enough for a long or analytical question to go to Claude | Off until the owner switches them on: a switch on the main screen that needs the password to turn on, and `cloud status` on the command line |
+| Earlier versions wrote their "on" into the settings file whenever any setting was saved, so an existing file is likely to say "on" | The old name is no longer read. Every installation is off until switched on |
+| The SDK chose its own credential and address: a sign-in token, a profile on disk, `ANTHROPIC_BASE_URL` | Only `ANTHROPIC_API_KEY` counts, and the SDK is handed the key, Anthropic's address, a time limit and one repeat. Its logging is off. An Admin key, a subscription's sign-in token and a value with a space in it are refused. Another address must be `https` or this machine |
+| A failed cloud call was skipped without a word. The owner could not tell a wrong key from an empty account | Each failure is told as what it is, in HELIOS's own words, and the local model answers |
+| A failed call counted as free, also when the answer had already begun | A call that broke off after the answer began is counted at its full estimate |
+| When Anthropic answers with another model after a decline, only the last attempt was counted, and a tool request of the model that declined could have run | Both attempts are counted. Only the answering model's requests run, and the answer is sent back the way the API asks for after such a hand-over |
+| The estimate left out the dearer write to the cache | It is included, so what is set aside is an upper limit again |
+| A request whose answer could not be read was sent again, up to twice, and only the last was counted | Not repeated. The one repeat that is left costs nothing: a request turned down over the reasoning sent back with it is asked once more without it |
+| **A fault in the turn loop.** The monthly budget warning was written between a tool request and its result. The model was then shown neither, and could ask for the same tool again | The warning is written where it cannot come between the two |
+| **A second one.** A turn that went on after an approval worked out anew where the model's view of the conversation begins. In a long conversation the beginning moved, and a cloud model turns such a request down | The view begins a fixed number of messages before the owner's latest message, for the whole turn |
+| With small changes allowed to run by themselves, a model that took over after a failure could repeat a change by asking for it again | After a failure in a turn, every change waits for the owner's yes |
+| An approval was marked as answered only after its action had run. A crash in between left it open, and a second yes would have run the action again | The yes is written down first |
+
+Also new: an answer that was cut off says so; `cloud check` sends one
+billed test question, after asking; the status and the screen say why
+cloud models are not ready.
+
+**The tests.** 29 new ones, in `apps/core/test/cloud.test.ts`. None
+reaches Anthropic and none needs a key.
+
+| What | Where it is tested |
+|---|---|
+| Which key counts, what is handed to the SDK, where the key may go, and that it is in nothing HELIOS says, logs or stores | "the key for Claude" (4 tests) |
+| What is read out of an answer: a hand-over between models, the stop reasons, the one repeat | "what is read out of Claude's answer" (3) |
+| Each kind of failure in HELIOS's own words, and which can cost money | "when Claude cannot answer" (2) |
+| The real SDK against a stand-in service on the machine itself: the request it sends, the stream it reads, a cut-off or unreadable tool request, a refused key, an empty account, an overloaded service, no connection, an answer that breaks off | "the real SDK, talking to a stand-in for Anthropic's service on this machine" (6) |
+| Off until switched on: a key alone, an older settings file, no local model, what is still missing, the switch over HTTP with the password | "cloud models are off until the owner switches them on" (5) |
+| A cloud model's tool requests pass the same gate | "a cloud model's tool requests" (1) |
+| A failure in the middle of a turn: the reason, nothing counted for a refusal, a broken-off call counted, no change repeated | "when a cloud model fails in the middle of a turn" (4) |
+| The two faults in the turn loop, the order of an approval, the note for a cut-off answer | "what a turn leaves in the transcript" (4) |
+
+Each protection was then switched off once, one at a time, 37 in all,
+among them the two faults in the turn loop as they were. Every one made a
+test fail.
+
+All 230 core tests were also run with Windows' rule imitated (section 9,
+point 18): all passed, and none of 284 deletions had an open file.
+
+Also done by hand on the Mac:
+
+- The real core on the scratch data folder of the web access trial (port
+  7127), whose settings file had been written by the earlier version and
+  said cloud models were on. The screen showed "Cloud models off". "Turn
+  on" asked for the password; with it the screen showed "on · no API key
+  is set (ANTHROPIC_API_KEY in the .env file)". "Turn off" worked at
+  once, and the old entry was gone from the settings file.
+- `cloud status` and `cloud check` on the command line, without a key and
+  with values that cannot be used. `cloud check` sent nothing when the
+  answer to its question was "no".
+- The size of HELIOS's own requests, for the cost figures in
+  `docs/CLAUDE-API.md`: about 6,300 bytes of instructions and tools with
+  every request.
+
+**Not done:** any request to the real API. No key exists, and the owner
+said not to ask for one and not to enable paid requests. Whether Anthropic
+accepts every field of the request is only shown by a real call; `cloud
+check` is meant to be the first. Nothing ran on Windows.
 
 ### The file server and the login check: what was found, changed and tested
 
@@ -787,8 +919,11 @@ laptop session can read it from the log; no exchange has been spoken yet.
    on, to try push-to-talk. No result was reported before this file was
    written.
 2. **No real Claude call.** There is no API key. Streaming, usage accounting,
-   cost reconciliation and the server-side fallback option are tested only
-   against a fake client.
+   cost reconciliation, the server-side fallback option and every failure
+   are tested against a stand-in for the SDK's client, and with the real
+   SDK against a stand-in service on the Mac. Whether Anthropic accepts
+   each field of the request is not known. `cloud check` is meant to be the
+   first real request (`docs/CLAUDE-API.md`, checks C1 to C8).
 3. **The local model is not installed on the Mac right now.** The installed
    Ollama (0.18.3, checked again this session) is too old for `qwen3.5:4b`,
    which needs 0.19 or newer. The test used the current release run
@@ -814,7 +949,9 @@ laptop session can read it from the log; no exchange has been spoken yet.
    `models.py`) is tested with a stand-in only. Whether a virus scanner
    causes that on the laptop is not known.
 10. **The API key is an environment variable.** Protected storage is not
-    built. The voice worker no longer inherits the key.
+    built. The voice worker no longer inherits the key. Only
+    `ANTHROPIC_API_KEY` is read; other credentials the SDK would take by
+    itself are not.
 11. **Backups do not leave the machine yet.**
 12. **Migration 0005 is on `main` now.** A data folder opened once by this
     code is refused by a checkout from before the merge (`46a8d33` or
@@ -866,21 +1003,37 @@ laptop session can read it from the log; no exchange has been spoken yet.
     `ai.local.contextTokens` is the first thing to try, memory permitting.
 22. **The search key is an environment variable**, like the cloud key
     (point 10).
-23. **The fix for the login check has not reached GitHub or the laptop.**
-    The advisories against `@fastify/static` are dealt with, and `npm
-    audit` finds nothing (section 7). Looking into them turned up a fault
-    in the core's own login check: an address spelled with a percent-code,
-    or written out in full, reached every `/api` route without a login.
-    It is fixed in the newest commit on the Mac. The code on `main`, on
-    GitHub and on the laptop still has the fault, and this repository is
-    public. Only a program or a browser on the same machine can use it,
-    because the core answers on `127.0.0.1`. Until the laptop has the fix,
-    the simple protection is not to leave the core running there when it
-    is not in use.
+23. **The fix for the login check has not reached the laptop.** The
+    advisories against `@fastify/static` are dealt with, and `npm audit`
+    finds nothing (section 7). Looking into them turned up a fault in the
+    core's own login check: an address spelled with a percent-code, or
+    written out in full, reached every `/api` route without a login. The
+    fix is on `main` and on GitHub since 19 November 2026 (`c553742`). The
+    laptop still runs the code from before it until it pulls. Only a
+    program or a browser on the same machine can use the fault, because
+    the core answers on `127.0.0.1`. Until the laptop has pulled, the
+    simple protection is not to leave the core running there when it is
+    not in use.
 24. **One layout change outside web access.** The transcript under the
     brain is now cut off at the top of its own area when it is taller than
     that area, instead of running upwards over the screen. Sources under an
     answer made that happen more often.
+25. **Cloud models will be off on every machine after the Claude commit.**
+    The switch has a new name (`ai.cloud.allowed`), and the old one is not
+    read. That is meant: nothing that was written by an earlier version
+    counts as the owner's yes. On the laptop it has to be switched on from
+    the screen once, if it is wanted.
+26. **An answer that breaks off stays on screen.** When a cloud model fails
+    in the middle of an answer, the words already shown, or spoken, stay,
+    and the next model's answer follows them. Taking them back would need
+    a new kind of message to the screen and to the voice. Not built.
+27. **The prices are settings, and can be out of date.** They are the list
+    prices as of November 2026 (`ai.cloud.pricePerMTok`). The budget counts
+    with them. A model it has no price for is counted at the highest price
+    it knows.
+28. **`cloud check` is not counted in the monthly total.** It does not
+    open the database, so that it works while the core runs. It shows what
+    its one request cost instead.
 
 ## 10. Decisions already made
 
@@ -932,11 +1085,10 @@ laptop session can read it from the log; no exchange has been spoken yet.
    on paper). Still the owner's to choose: which folder, and whether the
    laptop may hold the key or only a public half that can encrypt but not
    read.
-10. Say when the two commits on `feature/web-access` are to be pushed and
-    brought into `main`. Until then the laptop has neither web access nor
-    the fix for the login check (section 9, point 23). Should web access
-    have to wait longer, the fix can go first by itself; it was made on
-    top of web access, so that takes a little work.
+10. Say when the commit on `feature/claude-api` is to be pushed and brought
+    into `main`. Until then the laptop cannot get it. Nothing in it is
+    needed for web access or for the fix of the login check: those are on
+    `main` already.
 11. Web access: which search service, and create its key. Brave Search asks
     for a card at sign-up and says it does not share queries or train on
     them; Tavily needs no card and may use queries to improve its service.
@@ -945,26 +1097,35 @@ laptop session can read it from the log; no exchange has been spoken yet.
 12. Web access: whether every request should wait for a yes
     (`web.confirmEvery`). Off by default: only requests that could carry
     something private wait.
+13. Claude: whether to use it at all, and with which settings. The strong
+    model is `claude-sonnet-5-5`; `claude-opus-5-5` is more capable and
+    costs twice as much per token. `ai.prefer` decides whether hard
+    questions go to Claude by themselves (`"auto"`, the default) or only
+    when asked for (`"local"`). The monthly limit is €20.
+14. Claude: read Anthropic's terms for API customers before switching it
+    on. What Anthropic does with what it receives is not something this
+    code decides.
 
 ## 12. Exact next steps
 
 In this order. Steps 1 to 5 and 7 need the owner in the room or a decision
 of the owner.
 
-1. **Push the two commits, when the owner says so.** Web access and the
-   security fix are on `feature/web-access` on the Mac; `docs/WEB-ACCESS.md`
-   and section 7 explain them. With the owner's yes: the audit (section
-   13), `main` moved forward to the branch, a normal push. The owner has
-   said not to push, merge or deploy yet. The fault in the login check is
-   the reason not to leave this long (section 9, point 23).
-2. **On the laptop, after the push:** `git pull`, `npm install` (one new
+1. **On the laptop: pull `main`.** `git pull`, `npm install` (one new
    package for web access, and the newer file server with what it pulls
-   in), `npm run build`, `npm test`, `npm audit`. All 201 core tests have
-   to pass there; the 13 for the screen's files and the login check have
-   only run on a Mac (section 7). Then web access: create a search key,
-   put it in `.env`, and follow section 9 of `docs/LAPTOP-SETUP.md` and
-   the checks W1 to W10 in `docs/WEB-ACCESS.md`, on the test instance on
-   port 7127. Write the results into that page's table.
+   in), `npm run build`, `npm test`, `npm audit`. This brings the fix for
+   the login check (section 9, point 23). All 201 core tests of `main`
+   have to pass there; the 13 for the screen's files and the login check
+   have only run on a Mac (section 7). Then web access: create a search
+   key, put it in `.env`, and follow section 9 of `docs/LAPTOP-SETUP.md`
+   and the checks W1 to W10 in `docs/WEB-ACCESS.md`, on the test instance
+   on port 7127. Write the results into that page's table.
+2. **Push the Claude commit, when the owner says so.** It is on
+   `feature/claude-api` on the Mac; `docs/CLAUDE-API.md` and section 7
+   explain it. With the owner's yes: the audit (section 13), `main` moved
+   forward to the branch, a normal push. The owner has said not to push
+   or merge it. On the laptop it then needs `git pull`, `npm run build`
+   and `npm test` (230 core tests; no new package).
 3. **Windows laptop, acceptance checks of Phase 2**, as far as they are
    still open. Section 8 of the setup plan and
    `docs/PHASE-2-ACCEPTANCE.md`, in that page's order (the owner's
@@ -973,11 +1134,16 @@ of the owner.
    failure and fix into that page, and save the raw files under
    `docs/benchmarks/`. A fix is the smallest change that solves the
    problem. Nothing is "Passed" before it ran there.
-4. **One real Claude call** (check H1). Needs an API key in `.env`
-   (ignored by git). One request that routes to Sonnet and one to Haiku:
+4. **One real Claude call** (check H1). Needs the Claude commit on the
+   laptop (step 2), an API key in `.env` (ignored by git) and credit on
+   the API account; a Claude subscription does not include any. Then
+   section 10 of `docs/LAPTOP-SETUP.md`: `cloud status`, `cloud check`,
+   the switch on the screen, and the checks C1 to C8 in
+   `docs/CLAUDE-API.md`. They show a request to Sonnet and one to Haiku,
    streaming, the stored usage, the cost against the reservation, and that
-   the fallback option is accepted. It stays on the outstanding list until
-   it has run.
+   the fallback option is accepted. If Anthropic turns a request down,
+   HELIOS says which kind of refusal it was; write that down. It stays on
+   the outstanding list until it has run.
 5. **Voice choice.** Apply the owner's pick through `PUT /api/voice/settings`
    or `config.json`.
 6. **If streaming is chosen:** wire partial transcripts from the streaming
@@ -1054,6 +1220,21 @@ updated first; section 11, point 2).
 - **A package is updated on purpose.** In a commit of its own, after
   reading what changed, to a version that fits the Fastify in use. Never
   with `npm audit fix --force`. Run `npm audit` after every install.
+- **Cloud models are the owner's to switch on.** Off by default, and
+  nothing a program wrote may count as the owner's yes. Never ask the
+  owner for the API key, never put one in a command, a file of this
+  repository or a message, and never make a real request to Anthropic on
+  your own: tests use stand-ins and need no key, and a real request is
+  made only by the owner, with `cloud check` or from the screen.
+- **Nothing is changed twice because something failed.** A tool's result
+  is written to the transcript before a model is asked again, a model
+  that takes over after a failure gets no standing permission, and an
+  approval's yes is written down before its action runs. Each of these
+  has a test that fails when it is undone (section 7); keep it that way.
+- **Within a turn, what a model was shown stays as it was.** Nothing may
+  be written between a tool request and its result, and the beginning of
+  the model's view may not move. A cloud model turns a request down when
+  the earlier part of the conversation changed under it.
 - **A model changes in `models.json`, in a commit.** Never make a check pass
   by editing a hash to match a file that arrived differently.
 
@@ -1082,6 +1263,8 @@ npm run homebase -- status       # also: owner set-password, backups, restore, a
 npm run homebase -- web status                  # is web access on, and which search service
 npm run homebase -- web check <words>           # one real search with the key in .env
 npm run homebase -- web read <https address>    # fetch one page the way HELIOS does
+npm run homebase -- cloud status                # is Claude switched on, is a key set, the limits; sends nothing
+npm run homebase -- cloud check [strong]        # one short BILLED test question to Claude, after asking; owner only
 
 cd apps/voice
 uv sync                          # once

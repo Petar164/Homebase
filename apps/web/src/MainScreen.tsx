@@ -127,6 +127,7 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
           {status && (
             <div className="mt-3 space-y-1 text-sm text-mute">
               {helios && <ModelLine helios={helios} />}
+              {helios?.cloud && <CloudLine cloud={helios.cloud} onChanged={loadStatus} />}
               {helios?.web && <WebLine web={helios.web} onChanged={loadStatus} />}
               <p>
                 Last snapshot <span className="text-soft">{ago(status.snapshots.newestAt, now)}</span>
@@ -176,7 +177,8 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
 
 /** Which model would answer right now, and what the cloud has cost this month. */
 function ModelLine({ helios }: { helios: HeliosStatus }) {
-  const real = helios.models.filter((model) => model.id !== "standin" && model.available);
+  // A cloud model with a key counts only once the owner has switched cloud models on.
+  const real = helios.models.filter((model) => model.id !== "standin" && model.available && (model.location === "local" || helios.cloudEnabled));
   const usesCloud = real.some((model) => model.location === "cloud");
   return (
     <>
@@ -247,6 +249,79 @@ function WebLine({ web, onChanged }: { web: HeliosStatus["web"]; onChanged: () =
             autoFocus
             required
             aria-label="Your password, to turn web access on"
+            placeholder="Password, to turn it on"
+            className="w-44 border-b border-line bg-transparent py-1 text-sm text-bone outline-none placeholder:text-mute focus:border-salmon/60"
+          />
+          <button type="submit" className="text-xs tracking-widest text-soft uppercase hover:text-bone">
+            Confirm
+          </button>
+          <button type="button" onClick={() => setAsking(false)} className="text-xs tracking-widest text-mute uppercase hover:text-bone">
+            Cancel
+          </button>
+        </form>
+      )}
+      {error && (
+        <p role="alert" className="text-salmon">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Whether HELIOS may send a conversation to a cloud model, and the switch
+ * for it. Off works at once. On lets conversations leave this machine and
+ * can cost money, so the core asks for the password again.
+ */
+function CloudLine({ cloud, onChanged }: { cloud: HeliosStatus["cloud"]; onChanged: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const set = async (enabled: boolean) => {
+    setError("");
+    try {
+      await api("PUT", "/api/ai/cloud", { enabled });
+      setAsking(false);
+      setPassword("");
+      onChanged();
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 403) setAsking(true);
+      else setError(caught instanceof ApiError ? caught.message : "The core is not answering.");
+    }
+  };
+  const confirm = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await api("POST", "/api/auth/elevate", { password });
+    } catch (caught) {
+      setPassword("");
+      setError(caught instanceof ApiError ? caught.message : "The core is not answering.");
+      return;
+    }
+    await set(true);
+  };
+
+  const state = !cloud.enabled ? "off" : cloud.ready ? `on · ${cloud.service}` : `on · ${cloud.problem}`;
+  return (
+    <>
+      <p>
+        Cloud models <span className={cloud.enabled && !cloud.ready ? "text-salmon/80" : "text-soft"}>{state}</span>
+        <button type="button" onClick={() => void set(!cloud.enabled)} aria-pressed={cloud.enabled} className="ml-3 text-xs tracking-widest text-mute uppercase hover:text-bone">
+          Turn {cloud.enabled ? "off" : "on"}
+        </button>
+      </p>
+      {asking && (
+        <form onSubmit={confirm} className="flex items-center justify-end gap-2">
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            autoFocus
+            required
+            aria-label="Your password, to turn cloud models on"
             placeholder="Password, to turn it on"
             className="w-44 border-b border-line bg-transparent py-1 text-sm text-bone outline-none placeholder:text-mute focus:border-salmon/60"
           />

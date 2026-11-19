@@ -11,6 +11,7 @@ committed, so work can stop after any step without leaving a broken state.
 | 1. Foundation | Built and tested on a Mac. Not yet run on the Windows laptop |
 | 2. HELIOS core | In progress: text conversation, routing and budget built; the AI and voice stack is built and merged, tested on the Mac only |
 | 2.5 Web access | Built and tested on the Mac, with the internet played by the tests. Not yet run with a real search key, with the laptop's model, or on the laptop |
+| 2.6 Claude as an optional cloud model | A first version, built and tested on the Mac with stand-ins. Not yet run against the real API: no key exists |
 | 3. Memory and second brain | First piece built: full-text search over conversations |
 | 4. Neural interface | Not started |
 | 5. Action and integrations | Not started |
@@ -149,6 +150,53 @@ Done when (the checks are W1 to W10 in WEB-ACCESS.md, all "Not run"):
 - [ ] A failure of the web is said as a failure.
 - [ ] The same works when the question is spoken.
 
+## Phase 2.6: Claude as an optional cloud model
+
+Goal: a hard question can go to Claude through Anthropic's API when the
+owner has allowed it, inside a spending limit, without anything sensitive
+leaving the machine unasked. The local model stays the default. Full
+description: [CLAUDE-API.md](CLAUDE-API.md).
+
+The provider, the routing rules, the approval before sensitive content is
+sent and the budget were built with the AI and voice stack. This phase
+made the cloud model something the owner switches on, and made its
+failures safe.
+
+Built (each with automated tests, on the Mac, without a key):
+
+- [x] Off until switched on: a switch on the main screen that needs the
+      password to turn on, and `cloud status` on the command line. A key
+      alone, or a value an earlier version left in the settings file,
+      switches nothing on.
+- [x] The key is HELIOS's own business: only `ANTHROPIC_API_KEY`, handed
+      to the SDK with Anthropic's own address; a value of the wrong kind
+      is refused; the key is in no log, message or stored record.
+- [x] Failures told as what they are (a refused key, an empty account, a
+      rate limit, no connection), in HELIOS's own words.
+- [x] The budget counts on the safe side: the dearer cache write in the
+      estimate, both attempts when Anthropic answers with another model,
+      and a call that broke off after the answer began.
+- [x] Tool requests from a cloud model pass the same gate. Nothing is
+      changed twice because a model failed, and an approval's yes is
+      written down before its action runs.
+- [x] The real SDK driven against a stand-in service on the machine
+      itself: the request it sends, the stream it reads, its errors.
+
+Not done:
+
+- [ ] Any request to the real API. `cloud check` is the first one.
+- [ ] Protected storage for the key.
+- [ ] Taking back words already shown or spoken when an answer breaks off.
+- [ ] Background work for the light model.
+
+Done when (the checks are C1 to C8 in CLAUDE-API.md, all "Not run"):
+
+- [ ] With a key and the switch on, a hard question is answered by Claude,
+      the words appear as they are written, and the cost is counted.
+- [ ] With the switch off, nothing is sent, whatever is asked.
+- [ ] Sensitive records wait for a yes.
+- [ ] A wrong key is said as a wrong key, and the local model answers.
+
 ## Phase 3: Memory and second brain
 
 Goal: HELIOS remembers, and can find what it remembers.
@@ -242,18 +290,21 @@ file first.
 
 **Last updated:** 19 November 2026
 
-**Current work: web access (Phase 2.5).** Built and tested on the Mac on
-18 and 19 November 2026, and committed on the branch `feature/web-access`
-as a local checkpoint. Not pushed and not on `main`: that waits for the
-owner's word. What it is, what leaves the machine, how to
-set it up and the checks for the laptop are in
-[WEB-ACCESS.md](WEB-ACCESS.md). It still needs a search key, a run with the
-laptop's model, and a run on Windows.
+**Current work: Claude as an optional cloud model (Phase 2.6).** A first
+version, built and tested on the Mac on 19 November 2026 and committed on
+the branch `feature/claude-api`. Not pushed and not on `main`: that waits
+for the owner's word. Cloud models are off until switched on, HELIOS
+handles the key itself, failures are explained, and the budget counts on
+the safe side. No real request has been made: no API key exists. What it
+is, what it costs and the checks for the laptop are in
+[CLAUDE-API.md](CLAUDE-API.md).
 
-**On the same branch: a security fix (19 November 2026).** Also committed
-and not pushed. It closes a fault in the login check that the code on
-GitHub and on the laptop still has, which is the reason to push soon. The
-details are in section 7 of the handoff file.
+**Before that: web access (Phase 2.5) and a security fix.** Both are on
+`main` and were pushed on 19 November 2026. Web access still needs a
+search key, a run with the laptop's model, and a run on Windows
+([WEB-ACCESS.md](WEB-ACCESS.md)). The security fix closed a fault in the
+login check; the laptop has it once it has pulled. The details are in
+section 7 of the handoff file.
 
 **Before that: the AI and voice stack.** It is merged into `main` and
 pushed (15 November 2026). The brief and what is verified so far are in
@@ -291,16 +342,23 @@ integrated, tested and documented, and the owner says so.
 - Web access (Phase 2.5): two tools for the model, search through Brave
   Search or Tavily, pages fetched and read by the core, fixed rules and
   approvals for what may be sent out, sources on screen, and spoken answers
-  without addresses. Committed on its own branch on 19 November 2026, not
-  pushed.
-- A security fix on the same branch, 19 November 2026, not pushed: the
-  package that serves the screen's files was brought to a version with
-  the published fixes (`@fastify/static` 10.1.12; `npm audit` finds
-  nothing), and a fault in the login check was closed. An address spelled
-  with a percent-code, such as `/%61pi/tasks`, had reached the API without
-  a login. The code on GitHub and on the laptop still has that fault
-  until this is pushed.
-- 201 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
+  without addresses. On `main`, pushed on 19 November 2026.
+- A security fix, pushed the same day: the package that serves the
+  screen's files was brought to a version with the published fixes
+  (`@fastify/static` 10.1.12; `npm audit` finds nothing), and a fault in
+  the login check was closed. An address spelled with a percent-code, such
+  as `/%61pi/tasks`, had reached the API without a login. The laptop has
+  the fix once it has pulled.
+- Claude as an optional cloud model (Phase 2.6), a first version on the
+  branch `feature/claude-api`, not pushed: cloud models are off until the
+  owner switches them on with the password; only `ANTHROPIC_API_KEY`
+  counts and it goes to Anthropic's own address only; a failure is told
+  as what it is; a call that broke off is counted as spent; nothing is
+  changed twice because a model failed. Two faults in the turn loop were
+  found and fixed on the way (the budget warning could land between a
+  tool request and its result; a turn that went on after an approval
+  could start its view somewhere else).
+- 230 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
 - On the Windows laptop the core tests failed in the HTTP tests: their shared
   folder was removed while its database was still open, which Windows
   refuses. The tests' cleanup was fixed on the Mac and pushed on 16 November
@@ -360,6 +418,7 @@ integrated, tested and documented, and the owner says so.
 
 - Nothing has run on the Windows laptop.
 - No Claude call has been made: no API key exists. The local model works.
+  The Claude code has only met stand-ins ([CLAUDE-API.md](CLAUDE-API.md)).
 - No microphone or speaker has been used yet. Speech tests fed synthesised
   audio straight to the recogniser, and the new device checks ran in a
   simulated room.

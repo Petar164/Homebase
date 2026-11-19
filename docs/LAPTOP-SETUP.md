@@ -115,7 +115,22 @@ Use the test instance on port 7127 for the checks.
 | Start the core. On the main screen, top right: "Web access off · Turn on", and enter the password | "Web access on" with the service's name |
 | Run the checks W1 to W10 of the web access page and fill in its table | Every line says "Passed" or "Failed", not "Not run" |
 
-## 10. Report back
+## 10. Claude, the optional cloud model
+
+Only when you want it. It needs an API key and credit from the Anthropic
+Console; a Claude subscription does not include API use. What it is, what
+it sends and what it costs: [CLAUDE-API.md](CLAUDE-API.md). This is also
+how check H1 of the acceptance page is done.
+
+| Step | Check |
+|---|---|
+| `npm run homebase -- cloud status` | "Cloud models: off", and whether a key is set. Nothing is sent |
+| Put the key in `.env` next to `package.json`, as `ANTHROPIC_API_KEY=...` | `git status` does not list `.env`; `cloud status` says "API key: set" |
+| `npm run homebase -- cloud check`, then `cloud check strong`, answering `yes` | Each model answers in one sentence, with tokens and cost. Two billed requests, a cent or two together |
+| Start the core. On the main screen, top right: "Cloud models off · Turn on", and enter the password | "Cloud models on · Anthropic" |
+| Run the checks C1 to C8 of the Claude page and fill in its table | Every line says "Passed" or "Failed", not "Not run" |
+
+## 11. Report back
 
 Write down what failed and what was changed, and update "Where the work
 stands" in [ROADMAP.md](ROADMAP.md) and [`PROJECT_STATE.md`](../PROJECT_STATE.md).
