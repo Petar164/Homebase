@@ -3,6 +3,8 @@
 // cloud model and a scripted test model are interchangeable, and no part of
 // the system depends on one vendor.
 
+import type { WebSource } from "@homebase/shared";
+
 /** How private a piece of text is. Higher labels restrict where it may be sent. */
 export const SENSITIVITY = ["normal", "private", "sensitive", "secret"] as const;
 export type Sensitivity = (typeof SENSITIVITY)[number];
@@ -14,7 +16,36 @@ export function maxSensitivity(...labels: Sensitivity[]): Sensitivity {
 /** A model asking to use a tool. `input` is unchecked until the core validates it. */
 export type ToolCall = { id: string; name: string; input: unknown };
 
-export type ToolResult = { id: string; name: string; output: string; isError: boolean };
+/**
+ * What a tool returned. `output` is what a model is shown. The rest is kept
+ * with the transcript and never sent to a model:
+ *   brief    a short form of `output`, shown instead once the turn is over
+ *   sources  web pages this result brought into the conversation
+ *   web      what a web request did: whether anything was sent and came back
+ */
+export type ToolResult = {
+  id: string;
+  name: string;
+  output: string;
+  isError: boolean;
+  brief?: string;
+  sources?: WebSource[];
+  web?: WebNote;
+};
+
+export type WebNote = {
+  kind: "search" | "page";
+  /** True when the request left this machine, whether or not an answer came back. */
+  sent: boolean;
+  /** True when content came back and is in `output`. */
+  ok: boolean;
+  /** Who it was sent to: the search service's name, or the site. */
+  to: string;
+  /** How many bytes the request itself carried (the query, or the address). */
+  bytes: number;
+  /** Why it did not work, in words for the owner. */
+  failure?: string;
+};
 
 export type ChatMessage =
   | { role: "user"; text: string }

@@ -1,4 +1,4 @@
-import type { Approval, ConversationMessage, ConversationSummary, CoreEvent, HeliosStatus, TurnResult } from "@homebase/shared";
+import type { Approval, ConversationMessage, ConversationSummary, CoreEvent, HeliosStatus, TurnResult, WebStatus } from "@homebase/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Helios } from "../ai/helios.ts";
@@ -8,6 +8,7 @@ import type { EventBus } from "../events.ts";
 import type { Instance } from "../instance.ts";
 import { audit } from "../security/audit.ts";
 import type { VoiceService, VoiceStatus } from "../voice/service.ts";
+import { requireElevated } from "./server.ts";
 
 const idParams = z.object({ id: z.string().regex(/^[\w-]{1,64}$/) });
 const messageSchema = z.object({
@@ -30,6 +31,7 @@ const voiceSettingsSchema = z
     wakeThreshold: z.number().min(0.05).max(0.99),
   })
   .partial();
+const webSettingsSchema = z.object({ enabled: z.boolean(), confirmEvery: z.boolean() }).partial();
 const VOICE_OFF: VoiceStatus = { enabled: false, worker: "off", state: "idle", wakeAvailable: false, wakeEnabled: false, devices: { inputs: [], outputs: [] }, lastError: null, restarts: 0, last: null };
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
@@ -122,11 +124,33 @@ export function registerHeliosRoutes(app: FastifyInstance, helios: Helios, bus: 
     return voice?.status() ?? VOICE_OFF;
   });
 
+  // ---------- web access ----------
+  // Switching web access on, or switching "ask every time" off, lets more
+  // leave this machine, so it needs the password again (docs/SECURITY.md).
+  // Making it stricter never does: "off" has to work at once.
+
+  app.put("/api/web/settings", async (request): Promise<WebStatus> => {
+    const input = parse(webSettingsSchema, request.body);
+    const settings = instance.config.web;
+    const widens = (input.enabled === true && !settings.enabled) || (input.confirmEvery === false && settings.confirmEvery);
+    if (widens) requireElevated(request.session);
+    Object.assign(settings, input);
+    saveConfig(instance.paths, instance.config);
+    audit(instance.db, { actor: "owner", action: "web.settings", detail: { enabled: settings.enabled, confirmEvery: settings.confirmEvery } });
+    return (await helios.status()).web;
+  });
+
   app.get("/api/approvals", async (): Promise<Approval[]> => helios.pendingApprovals());
 
   app.post("/api/approvals/:id/decide", async (request) => {
     const { id } = parse(idParams, request.params);
     const { decision } = parse(decisionSchema, request.body);
-    return helios.decide(id, decision, request.session);
+    const decided = await helios.decide(id, decision, request.session);
+    // A web request that was asked for by voice and approved on screen is
+    // answered by voice too: the yes is the only part that needs the screen.
+    if (voice && decided.approval.web && decided.turn) {
+      voice.announce(decided.turn.conversationId, decided.turn.messages.filter((message) => message.role === "assistant").map((message) => message.text));
+    }
+    return decided;
   });
 }

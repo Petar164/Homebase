@@ -12,6 +12,9 @@ import { dataPaths, defaultDataDir } from "./paths.ts";
 import { audit, verifyAuditLog } from "./security/audit.ts";
 import { ownerUsername, setOwnerPassword } from "./security/owner.ts";
 import { consoleLogger, nowIso } from "./util.ts";
+import { WebError } from "./web/http.ts";
+import { WebAccess } from "./web/service.ts";
+import { checkWebUrl } from "./web/url.ts";
 
 // The `homebase` command: everything that is done on the machine itself
 // rather than through the screen. Creating the owner account and restoring
@@ -30,6 +33,9 @@ const HELP = `Usage: npm run homebase -- <command>
                                       replace the data with a snapshot
   audit verify                        check that the audit log was not altered
   import <file> [--replace]           import an export of the earlier Home Base
+  web status                          whether HELIOS may use the web, and which search service is set up
+  web check <words to search for>     run one live search with the key that is set up, and show what comes back
+  web read <https address>            fetch one page the way HELIOS does, and show what it would read
 `;
 
 const dataDir = defaultDataDir();
@@ -88,7 +94,7 @@ async function main(args: string[]): Promise<void> {
   const words = args.filter((arg, index) => !arg.startsWith("--") && index !== fromValueIndex);
   const [command, second, third] = words;
 
-  switch (`${command ?? ""} ${command === "backups" || command === "owner" || command === "audit" ? (second ?? "") : ""}`.trim()) {
+  switch (`${command ?? ""} ${command === "backups" || command === "owner" || command === "audit" || command === "web" ? (second ?? "") : ""}`.trim()) {
     case "status": {
       console.log(`Data folder:  ${paths.root}`);
       if (!existsSync(paths.dbFile)) return console.log("No Home Base here yet. It is created the first time the core starts.");
@@ -227,6 +233,50 @@ async function main(args: string[]): Promise<void> {
         audit(instance.db, { actor: "cli", action: "data.import", detail: summary });
         console.log("Imported:", summary);
       });
+      return;
+    }
+
+    // The web commands read the settings file only. They do not open the
+    // database, so they also work while the core is running.
+    case "web status": {
+      const settings = loadConfig(paths).web;
+      const status = new WebAccess({ settings: () => settings }).status();
+      console.log(`Web access:      ${status.enabled ? "on" : "off"}${status.enabled && status.confirmEvery ? ", every request needs a yes on screen" : ""}`);
+      console.log(`Search service:  ${status.service ?? "none set up"}`);
+      if (status.problem && status.enabled) console.log(`Not ready:       ${status.problem}`);
+      if (!status.service) console.log("Put BRAVE_SEARCH_API_KEY or TAVILY_API_KEY in the .env file next to package.json (docs/WEB-ACCESS.md).");
+      console.log(`Limits:          ${settings.limits.searchesPerTurn} searches and ${settings.limits.pagesPerTurn} pages per question, ${settings.search.maxResults} results per search`);
+      return;
+    }
+
+    case "web check":
+    case "web read": {
+      // Run by the owner, on purpose, so it goes out even while the switch for HELIOS is off.
+      const settings = { ...loadConfig(paths).web, enabled: true };
+      const web = new WebAccess({ settings: () => settings });
+      const started = Date.now();
+      try {
+        if (second === "check") {
+          const query = words.slice(2).join(" ").trim() || fail("Give the words to search for.");
+          const { service, hits } = await web.search(query);
+          console.log(`${service} answered in ${Date.now() - started} ms with ${hits.length} result(s).`);
+          for (const [index, hit] of hits.entries()) {
+            console.log(`\n${index + 1}. ${hit.title}  (${hit.site}${hit.published ? `, ${hit.published}` : ""})\n   ${hit.url.href}\n   ${hit.snippet}`);
+          }
+        } else {
+          const checked = checkWebUrl(third ?? fail("Give the address of the page."));
+          if (!checked.ok) fail(`Not opened: ${checked.reason}.`);
+          const { url, page, truncated } = await web.read(checked.url);
+          const text = page.blocks.join("\n");
+          console.log(`Read in ${Date.now() - started} ms from ${url.href}`);
+          console.log(`Title:      ${page.title || "(none)"}\nSite:       ${page.site}\nPublished:  ${page.published ?? "the page does not say"}`);
+          console.log(`Text:       ${text.length} characters in ${page.blocks.length} paragraph(s)${truncated ? " (the page was longer than the size limit; its beginning was read)" : ""}\n`);
+          console.log(text.slice(0, 600) + (text.length > 600 ? " ..." : ""));
+        }
+      } catch (error) {
+        if (error instanceof WebError) fail(`It did not work: ${error.message}.`);
+        throw error;
+      }
       return;
     }
 

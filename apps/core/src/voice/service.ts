@@ -4,6 +4,7 @@ import { AppError } from "../errors.ts";
 import type { EventBus } from "../events.ts";
 import { type Logger, newId } from "../util.ts";
 import type { AudioDevice, VoiceCommand, VoiceEvent, VoiceTransport } from "./protocol.ts";
+import { speakable } from "./speakable.ts";
 
 // The core's side of voice. It starts the voice worker, restarts it when
 // it dies, turns what was heard into a normal conversation turn, and has
@@ -345,7 +346,7 @@ export class VoiceService {
       // answer from a model that did not stream.
       for (const message of turn.messages) {
         if (message.role === "user") continue;
-        if (message.role === "assistant" && answer.spoken.includes(message.text.trim().slice(0, 40))) continue;
+        if (message.role === "assistant" && answer.spoken.includes(speakable(message.text).slice(0, 40))) continue;
         this.speakSentence(message.text);
       }
     } catch (error) {
@@ -359,6 +360,24 @@ export class VoiceService {
         this.answer = null;
       }
     }
+  }
+
+  /**
+   * Speaks an answer that came after the spoken exchange was over: what a
+   * web request brought back once the owner said yes to it on screen. Only
+   * for the conversation that is being spoken, and only while it is recent.
+   */
+  announce(conversationId: string, texts: string[]): void {
+    if (!this.settings.speakReplies || !this.transport || this.answer) return;
+    if (this.conversation?.id !== conversationId || this.now() - this.conversation.at > CONTINUE_WITHIN_MS) return;
+    const answer = { id: newId(), pending: "", spoken: "" };
+    this.answer = answer;
+    for (const text of texts) this.feed(`${text.trim()} `);
+    this.flush();
+    this.transport.send({ type: "speak_end", id: answer.id });
+    this.lastSpoken = { text: answer.spoken, at: this.now() };
+    this.conversation.at = this.now();
+    this.answer = null;
   }
 
   /** Takes a piece of answer text and sends every sentence that is now complete. */
@@ -382,7 +401,8 @@ export class VoiceService {
   }
 
   private speakSentence(text: string): void {
-    const sentence = text.trim();
+    // Source numbers and web addresses are for the screen, not for the ear.
+    const sentence = speakable(text);
     if (!this.answer || !sentence) return;
     const timings = this.last?.sinceListeningEnded;
     if (timings && timings.firstTextMs === null && this.timed?.answerId === this.answer.id) timings.firstTextMs = this.now() - this.timed.endedAt;

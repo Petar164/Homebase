@@ -11,6 +11,7 @@ import { findSession, readCookie, SESSION_COOKIE, type Session } from "../securi
 import type { VoiceTransport } from "../voice/protocol.ts";
 import { VoiceService } from "../voice/service.ts";
 import type { Logger } from "../util.ts";
+import { WebAccess } from "../web/service.ts";
 import { registerHeliosRoutes } from "./heliosRoutes.ts";
 import { registerRoutes } from "./routes.ts";
 
@@ -33,6 +34,8 @@ export type ServerContext = {
   providers?: ModelProvider[];
   /** How to start the voice worker. Without it, or with voice switched off, there is no voice. */
   voiceTransport?: () => VoiceTransport;
+  /** HELIOS's way to the public web. Without it, the real one is used; it does nothing while web access is switched off. */
+  web?: WebAccess;
 };
 
 declare module "fastify" {
@@ -65,7 +68,9 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
   // screen is showing; shutting down must not wait for it.
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024, forceCloseConnections: true });
   const bus = new EventBus();
-  const helios = new Helios({ instance, providers: context.providers ?? [new StandInProvider()], bus, log });
+  // Web access reads its settings each time it is used, so the switch on screen takes effect at once.
+  const web = context.web ?? new WebAccess({ settings: () => instance.config.web });
+  const helios = new Helios({ instance, providers: context.providers ?? [new StandInProvider()], bus, log, web });
   const routes: string[] = [];
 
   const allowedHosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, ...(context.extraHosts ?? [])]);

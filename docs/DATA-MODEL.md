@@ -52,9 +52,9 @@ stays readable when the database is the thing that was lost.
 | Table | Purpose | Key fields |
 |---|---|---|
 | `conversations` | One conversation, native or imported | `source` (`helios`, `claude_import`), `channel` (`voice`, `text`), `title`, `started_at`, `external_id`, `summary` |
-| `messages` | The transcript, never rewritten | `conversation_id`, `seq`, `role`, `text`, `content` (the model's full answer), `sensitivity`, `provider`, `model`, `tokens_in`, `tokens_out` |
-| `approvals` | Each time the owner was asked for a yes | `kind` (`tool`, `cloud_egress`), `tier`, `summary`, `action` (the exact request that runs if approved), `status`, `expires_at`, `decided_via`, `result` |
-| `egress_log` | Each cloud call, sent or held back | `at`, `provider`, `model`, `purpose`, `max_sensitivity`, `bytes`, `tokens_in`, `tokens_out`, `cost_micros`, `outcome`, `approval_id` |
+| `messages` | The transcript, never rewritten | `conversation_id`, `seq`, `role`, `text`, `content` (the model's full answer; for a tool's results also the web pages they brought in, and for an answer what the web was used for), `sensitivity`, `provider`, `model`, `tokens_in`, `tokens_out` |
+| `approvals` | Each time the owner was asked for a yes | `kind` (`tool`, `cloud_egress`), `tier`, `summary`, `action` (the exact request that runs if approved; for a web request also what would be sent, to whom and why the owner is asked), `status`, `expires_at`, `decided_via`, `result` |
+| `egress_log` | Each cloud call and each web request, sent or held back | `at`, `provider` (for the web: `web-search` or `web-page`), `model` (for the web: the search service, or the site), `purpose`, `max_sensitivity`, `bytes`, `tokens_in`, `tokens_out`, `cost_micros`, `outcome`, `approval_id` |
 | `documents` | Indexed notes, files, PDFs, web pages | `kind`, `path`, `title`, `sha256`, `bytes`, `indexed_at`, `root_id` |
 | `file_roots` | Folders HELIOS may read or write | `path`, `access`, `default_sensitivity`, `approved_at` |
 | `chunks` | Searchable pieces of messages and documents | `owner_kind`, `owner_id`, `seq`, `text` |

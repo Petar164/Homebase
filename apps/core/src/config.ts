@@ -112,6 +112,56 @@ const configSchema = z.object({
         .prefault({}),
     })
     .prefault({}),
+  web: z
+    .object({
+      /**
+       * The switch for the public internet. False: HELIOS can neither search
+       * the web nor open a page, and says so when asked. Off until the owner
+       * turns it on.
+       */
+      enabled: z.boolean().default(false),
+      /**
+       * True: every search and every page needs a yes on screen. False: only
+       * requests that could carry private details do (docs/WEB-ACCESS.md).
+       */
+      confirmEvery: z.boolean().default(false),
+      search: z
+        .object({
+          /** "auto" uses the service whose key is in the environment, Brave first. */
+          provider: z.enum(["auto", "brave", "tavily"]).default("auto"),
+          /** Another address for the search service, for a proxy or a test. Empty means the service's own. */
+          baseUrl: z.union([z.literal(""), z.url({ protocol: /^https?$/ })]).default(""),
+          /** Most results one search gives the model. */
+          maxResults: z.number().int().min(1).max(10).default(5),
+          /** Most characters of one result's summary. */
+          snippetChars: z.number().int().min(60).max(1000).default(240),
+          /** Prefer results from this country (two letters, Brave only). Empty means no preference. */
+          country: z.string().regex(/^([A-Za-z]{2})?$/).default(""),
+          safeSearch: z.enum(["off", "moderate", "strict"]).default("moderate"),
+          timeoutMs: z.number().int().min(1000).max(60_000).default(10_000),
+        })
+        .prefault({}),
+      page: z
+        .object({
+          /** The whole time one page may take, redirects included. */
+          timeoutMs: z.number().int().min(1000).max(60_000).default(12_000),
+          /** Most bytes read from one page. A longer page is read up to here. */
+          maxBytes: z.number().int().min(10_000).max(10_000_000).default(2_000_000),
+          maxRedirects: z.number().int().min(0).max(10).default(5),
+          /** Most characters of one page handed to the model. A small context window narrows this further. */
+          maxChars: z.number().int().min(500).max(40_000).default(6000),
+        })
+        .prefault({}),
+      /** Most searches and most pages for one question, and most page fetches running at the same time. */
+      limits: z
+        .object({
+          searchesPerTurn: z.number().int().min(1).max(10).default(3),
+          pagesPerTurn: z.number().int().min(1).max(10).default(4),
+          concurrent: z.number().int().min(1).max(8).default(2),
+        })
+        .prefault({}),
+    })
+    .prefault({}),
   voice: z
     .object({
       /** Starts the voice worker (apps/voice) with the core. Off until speech is set up on this machine. */

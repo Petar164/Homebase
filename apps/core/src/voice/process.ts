@@ -2,12 +2,12 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { VoiceCommand, VoiceEvent, VoiceTransport } from "./protocol.ts";
 
-/** What the core holds for cloud models. The worker never calls one. */
-const WITHHELD_FROM_WORKER = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+/** What the core holds for cloud models and for web search. The worker never calls either. */
+const WITHHELD_FROM_WORKER = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "BRAVE_SEARCH_API_KEY", "TAVILY_API_KEY"];
 
 /**
  * The environment the voice worker is started with: the core's own, without
- * the cloud key. The worker only hears and speaks, and speech libraries
+ * the cloud key and the web search keys. The worker only hears and speaks, and speech libraries
  * from other projects run inside it, so it is not handed a secret it has
  * no use for. (Names are compared without regard to case, as Windows does.)
  */

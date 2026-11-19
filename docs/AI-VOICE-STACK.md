@@ -31,7 +31,8 @@ provider is another small file.
 
 ## What was actually tested
 
-**Automated tests: 108 in the core, 75 in the voice worker, all passing on
+**Automated tests: 188 in the core (80 of them for web access, see
+[WEB-ACCESS.md](WEB-ACCESS.md)), 75 in the voice worker, all passing on
 the Mac.**
 They cover each acceptance point of the brief:
 

@@ -10,6 +10,7 @@ committed, so work can stop after any step without leaving a broken state.
 |---|---|
 | 1. Foundation | Built and tested on a Mac. Not yet run on the Windows laptop |
 | 2. HELIOS core | In progress: text conversation, routing and budget built; the AI and voice stack is built and merged, tested on the Mac only |
+| 2.5 Web access | Built and tested on the Mac, with the internet played by the tests. Not yet run with a real search key, with the laptop's model, or on the laptop |
 | 3. Memory and second brain | First piece built: full-text search over conversations |
 | 4. Neural interface | Not started |
 | 5. Action and integrations | Not started |
@@ -105,6 +106,49 @@ which mark, and what was found, is in
 [PHASE-2-ACCEPTANCE.md](PHASE-2-ACCEPTANCE.md). Nothing there has been run
 yet.
 
+## Phase 2.5: Web access
+
+Goal: HELIOS can answer questions about what is recent or unknown to it, by
+searching the public web and reading pages, without anything private
+leaving the machine unasked. Full description: [WEB-ACCESS.md](WEB-ACCESS.md).
+
+Built (each with automated tests, on the Mac):
+
+- [x] Two tools for the model, `search_web` and `read_webpage`, in the
+      existing tool system. The same local model reasons; no cloud model is
+      needed.
+- [x] Search through a documented API: Brave Search or Tavily, behind one
+      interface, chosen by which key is present.
+- [x] The core fetches pages itself: `https` only, public addresses only
+      (checked at the moment of connecting, and again on every redirect),
+      with limits on time, size and number.
+- [x] Pages turned into readable text; what a reader cannot see is left out.
+- [x] Fixed rules for what a request may carry out of the machine, with the
+      existing approvals for anything that could be private.
+- [x] Text from the web cannot cause a change or send details away,
+      whatever it says.
+- [x] Web results sized to the model's context (4,096 tokens on the
+      laptop), and shortened in later turns.
+- [x] Answers with numbered sources that are links on screen; failures
+      shown as failures; a switch with its state on the main screen.
+- [x] Spoken answers without addresses and source numbers.
+
+Not done:
+
+- [ ] A search with a real key. No account exists yet; the two adapters are
+      written from the services' documentation.
+- [ ] The laptop's model using the tools. On the Mac only the stand-in and
+      scripted models did.
+- [ ] Anything on Windows.
+
+Done when (the checks are W1 to W10 in WEB-ACCESS.md, all "Not run"):
+
+- [ ] A question that needs current public information gets an answer
+      grounded in what was found, with source links that work.
+- [ ] A request that needs a yes waits for it, and runs as approved.
+- [ ] A failure of the web is said as a failure.
+- [ ] The same works when the question is spoken.
+
 ## Phase 3: Memory and second brain
 
 Goal: HELIOS remembers, and can find what it remembers.
@@ -196,9 +240,17 @@ The full handoff, with the git state, test results, open issues and the
 exact next steps, is in [`PROJECT_STATE.md`](../PROJECT_STATE.md). Read that
 file first.
 
-**Last updated:** 15 November 2026, late evening
+**Last updated:** 19 November 2026
 
-**Current work: the AI and voice stack.** It is merged into `main` and
+**Current work: web access (Phase 2.5).** Built and tested on the Mac on
+18 and 19 November 2026, and committed on the branch `feature/web-access`
+as a local checkpoint. Not pushed and not on `main`: that waits for the
+owner's word. What it is, what leaves the machine, how to
+set it up and the checks for the laptop are in
+[WEB-ACCESS.md](WEB-ACCESS.md). It still needs a search key, a run with the
+laptop's model, and a run on Windows.
+
+**Before that: the AI and voice stack.** It is merged into `main` and
 pushed (15 November 2026). The brief and what is verified so far are in
 [AI-VOICE-STACK.md](AI-VOICE-STACK.md). Next is the first session on the
 Windows laptop ([LAPTOP-SETUP.md](LAPTOP-SETUP.md)), ending in the
@@ -231,11 +283,17 @@ integrated, tested and documented, and the owner says so.
   local model at more than one context size; and the checks, their marks
   (confirmed by the owner on 15 November 2026) and an empty results table
   are written down.
-- 108 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
+- Web access (Phase 2.5): two tools for the model, search through Brave
+  Search or Tavily, pages fetched and read by the core, fixed rules and
+  approvals for what may be sent out, sources on screen, and spoken answers
+  without addresses. Committed on its own branch on 19 November 2026, not
+  pushed.
+- 188 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
 - On the Windows laptop the core tests failed in the HTTP tests: their shared
   folder was removed while its database was still open, which Windows
-  refuses. The tests' cleanup is fixed on the Mac (16 November 2026). The fix
-  has not run on Windows yet.
+  refuses. The tests' cleanup was fixed on the Mac and pushed on 16 November
+  2026. Whether the tests then passed on Windows has not been reported to
+  the Mac.
 
 **In progress / next, in order**
 

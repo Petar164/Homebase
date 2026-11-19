@@ -8,7 +8,7 @@ import type { ChatMessage, ChatRequest, ChatResponse, ModelProvider, ToolResult 
 
 const HELP =
   "I am running without a language model for now, so I only understand a few requests: " +
-  '"what is due", "list my tasks", "add a task ...", "money this month" and "what did I say about ...". ' +
+  '"what is due", "list my tasks", "add a task ...", "money this month", "what did I say about ..." and "search the web for ...". ' +
   "Connect a model to talk freely.";
 
 function lastUserText(messages: ChatMessage[]): string {
@@ -36,8 +36,10 @@ function parse(result: ToolResult): Record<string, unknown> {
 
 /** Turns one tool result into a sentence. */
 function describe(result: ToolResult): string {
-  if (result.isError) return `That did not work: ${result.output}`;
   const data = parse(result);
+  // The web tools say in their own words what went wrong; that is passed on as it is.
+  if (typeof data.web_error === "string") return data.web_error;
+  if (result.isError) return `That did not work: ${result.output}`;
   if (data.status === "waiting_for_owner") return `${String(data.summary)}. Confirm on screen and I will do it.`;
 
   if (result.name === "get_overview") {
@@ -62,6 +64,15 @@ function describe(result: ToolResult): string {
     const cloud = data.cloudThisMonth as { spentEur: number; limitEur: number };
     const answered = last ? `The last answer came from ${last.model ?? "an unknown model"}, on ${last.ranOn}, because ${last.chosenBecause ?? "no reason was recorded"}.` : "Nothing has been answered in this conversation yet.";
     return `${answered} Cloud spending this month is €${cloud.spentEur.toFixed(2)} of €${cloud.limitEur}.`;
+  }
+  if (result.name === "search_web") {
+    const found = (data.live_web_results as { results: { n: number; title: string; site: string }[] } | undefined)?.results ?? [];
+    if (found.length === 0) return "The search ran and found nothing.";
+    return `I found ${found.length} on the web: ${found.slice(0, 5).map((item) => `${item.title} (${item.site}) [${item.n}]`).join("; ")}.`;
+  }
+  if (result.name === "read_webpage") {
+    const page = data.web_page as { n: number; title: string; site: string; text: string } | undefined;
+    return page ? `${page.title} (${page.site}) says: ${page.text.replace(/\s+/g, " ").slice(0, 280)} [${page.n}]` : "The page could not be read.";
   }
   if (result.name === "get_money_summary") {
     const sales = data.sales as { count: number; revenue: string; costOfGoods: string };
@@ -105,6 +116,11 @@ export class StandInProvider implements ModelProvider {
 
     const add = /^(?:please\s+)?(?:add|create|new)\s+(?:a\s+)?task(?:\s+to|:)?\s+(.+)$/i.exec(text) ?? /^remind me to\s+(.+)$/i.exec(text);
     if (add?.[1]) return use("add_task", { title: add[1].replace(/[.!]+$/, ""), area: "inbox" });
+    // Before the memory rule below, which would otherwise take "search the web for ..." as a search of old conversations.
+    const online = /^(?:please\s+)?(?:search|look up|look|check|google)\s+(?:on\s+)?(?:the\s+)?(?:web|internet|online)\s+(?:for\s+|about\s+)?(.+?)[.?!]*$/i.exec(text);
+    if (online?.[1]) return use("search_web", { query: online[1] });
+    const open = /^(?:please\s+)?(?:open|read)\s+(?:web\s+)?(?:source|result)\s+(\d+)[.?!]*$/i.exec(text);
+    if (open?.[1]) return use("read_webpage", { source: Number(open[1]), question: "what this page says" });
     const recall = /^(?:what did (?:i|we) say about|search(?: for)?|find|do you remember)\s+(.+?)\??$/i.exec(text);
     if (recall?.[1]) return use("search_conversations", { query: recall[1] });
     if (/\b(which|what) model\b|\bcloud (cost|spend|spending|budget)\b/.test(lower)) return use("get_answer_info", {});

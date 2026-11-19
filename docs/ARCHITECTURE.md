@@ -5,7 +5,7 @@ its voice, its reasoning and the way the screen behaves. This document
 describes how the system is put together and why.
 
 Related documents: [data model](DATA-MODEL.md), [persistence](PERSISTENCE.md),
-[security](SECURITY.md), [roadmap](ROADMAP.md).
+[security](SECURITY.md), [web access](WEB-ACCESS.md), [roadmap](ROADMAP.md).
 
 ## The shape of the system
 
@@ -31,6 +31,10 @@ Related documents: [data model](DATA-MODEL.md), [persistence](PERSISTENCE.md),
       DATA FOLDER, outside the app folder
       database · knowledge vault · files · outputs · backups
 ```
+
+The core also reaches the public web, when the owner has switched that
+on: a search service through its API, and public pages that it fetches and
+reads itself ([WEB-ACCESS.md](WEB-ACCESS.md)).
 
 Three rules hold everything else up:
 
@@ -83,6 +87,7 @@ without touching the core.
 | Persistence | Module in the core | The data folder, the database, migrations | Create a blank database over an existing one |
 | Permissions and auth | Module in the core | Login, step-up authentication, risk tiers, standing grants, the audit log | Accept voice alone for a sensitive action |
 | Tools and integrations | Module in the core + child processes | Files, PDFs, browser, apps, MCP servers, plugins | Run outside the scope it was granted |
+| Web access | Module in the core (`src/web`) | Searching through a search service's API, fetching and reading public pages, the rules for what a request may carry, the numbered sources of an answer | Contact anything that is not a public website, run anything a page contains, or send out a record of the owner's without a yes |
 | Scheduler and agents | Module in the core | Recurring jobs, long-running agent runs, their step logs, the kill switch | Start work that has no grant |
 | UI visualisation | In `apps/web` | Turning HELIOS's state into what the brain and widgets do | Carry logic: it only renders state the core sends |
 | Updates and backups | Module in the core + `homebase` command | Snapshots, mirrors, restore, update and rollback | Update or migrate without a snapshot first |
@@ -130,6 +135,10 @@ Speech runs on the CPU and leaves the GPU to the language model and the
 screen: Parakeet Unified for speech to text, Silero for speech detection,
 Kokoro for the voice, openWakeWord for the wake phrase.
 
+On the laptop the local model is `gpt-oss:20b` with a context of 4,096
+tokens, set in that machine's `config.json` (as the owner stated on
+18 November 2026; it has not been run on the development machine).
+
 Model names, limits and prices are configuration, not code. Which model
 answers, the budget, the measurements and what is still unverified are in
 [AI-VOICE-STACK.md](AI-VOICE-STACK.md).
@@ -156,8 +165,8 @@ voice.
   memories, links), so it grows as HELIOS learns. A monthly image of it is
   saved to the archive.
 - **States, not pages.** The core publishes one state at a time: idle,
-  listening, thinking, searching memory, retrieving, speaking, acting,
-  presenting. The brain and widgets react to it. Searching lights regions and
+  listening, thinking, searching memory, searching the web, retrieving,
+  speaking, acting, presenting. The brain and widgets react to it. Searching lights regions and
   pulses connections. Presenting moves the brain aside, shows the result,
   asks whether to save it, then returns.
 - **Always visible:** time, date, weather, the week along the bottom, today's

@@ -1,6 +1,7 @@
-import type { Approval, ConversationMessage, ConversationSummary, CoreEvent, HeliosState, TurnResult } from "@homebase/shared";
+import type { Approval, ConversationMessage, ConversationSummary, CoreEvent, HeliosState, TurnResult, WebActivity } from "@homebase/shared";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api.ts";
+import { ActivityLine, Cited, WebNote } from "./WebSources.tsx";
 
 // The conversation with HELIOS, shown under the brain like subtitles.
 // Typing is the stand-in for speaking until the voice worker exists; the
@@ -27,6 +28,8 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
   const [talking, setTalking] = useState(false);
   /** Ask for the stronger model for the next message only. */
   const [strong, setStrong] = useState(false);
+  /** Web requests of the turn in progress: what is being searched or read right now. */
+  const [activity, setActivity] = useState<WebActivity[]>([]);
 
   // The event handler below is created once; these refs give it the latest values.
   const current = useRef<string | null>(null);
@@ -79,7 +82,13 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
         setHelios(event.state);
         if (event.state === "idle" || event.state === "transcribing") setTalking(false);
         reportState.current(event.state);
-        if (event.state === "idle") setStreaming("");
+        if (event.state === "idle") {
+          setStreaming("");
+          // The turn is over. What the web was used for, and what failed, now stands under the answer itself.
+          setActivity([]);
+        }
+      } else if (event.type === "activity" && mine(event.conversationId)) {
+        setActivity((existing) => [...existing.filter((other) => other.id !== event.activity.id), event.activity]);
       } else if (event.type === "delta" && mine(event.conversationId)) {
         setStreaming((soFar) => soFar + event.text);
       } else if (event.type === "message" && mine(event.conversationId)) {
@@ -101,6 +110,7 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
     setBusy(true);
     setError("");
     setText("");
+    setActivity([]);
     try {
       const turn = await api<TurnResult>("POST", "/api/helios/message", { text: say, conversationId: conversationId ?? undefined, reasoning: strong ? "strong" : undefined });
       setStrong(false);
@@ -188,16 +198,21 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[38rem] flex-col justify-end gap-3 pb-2">
-      <div aria-live="polite" className="space-y-2">
+      {/* When the transcript is taller than its place, its oldest lines are cut off at the top instead of running into the rest of the screen. */}
+      <div aria-live="polite" className="flex min-h-0 flex-col justify-end gap-2 overflow-hidden">
         {shown.map((message) =>
           message.role === "user" ? (
             <p key={message.id} className="text-right text-sm text-mute">
               {message.text}
             </p>
           ) : message.role === "assistant" ? (
-            <p key={message.id} className="text-xl leading-snug font-light text-bone">
-              {message.text}
-            </p>
+            <div key={message.id}>
+              <p className="text-xl leading-snug font-light text-bone">
+                <Cited text={message.text} sources={message.web?.sources} />
+              </p>
+              {/* An answer that used the live web says so and shows its sources; one that did not has nothing here. */}
+              {message.web && <WebNote web={message.web} open={message.id === lastAssistant?.id} />}
+            </div>
           ) : (
             <p key={message.id} className="text-sm text-salmon/90">
               {message.text}
@@ -205,6 +220,9 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
           ),
         )}
         {streaming && <p className="text-xl leading-snug font-light text-soft">{streaming}</p>}
+        {activity.slice(-3).map((entry) => (
+          <ActivityLine key={entry.id} activity={entry} />
+        ))}
         {/* Which model wrote the last answer, and why it was the one chosen. */}
         {lastAssistant?.model && !streaming && (
           <p className="text-xs text-mute">
@@ -216,8 +234,25 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
 
       {approvals.map((approval) => (
         <div key={approval.id} role="group" aria-label="HELIOS needs your yes" className="rounded-lg border border-salmon/40 bg-ink/90 p-4">
-          <p className="label">{approval.kind === "cloud_egress" ? "Leaves this machine" : "Needs your yes"}</p>
-          <p className="mt-1 text-base text-bone">{approval.summary}</p>
+          <p className="label">{approval.kind === "cloud_egress" || approval.web ? "Leaves this machine" : "Needs your yes"}</p>
+          <p className="mt-1 text-base break-words text-bone">{approval.summary}</p>
+          {/* A web request: exactly what would be sent, to whom, and why HELIOS asks first. */}
+          {approval.web && (
+            <dl className="mt-2 space-y-0.5 text-xs text-mute">
+              <div>
+                <dt className="inline">Goes to </dt>
+                <dd className="inline text-soft">{approval.web.to}</dd>
+              </div>
+              <div className="break-all">
+                <dt className="inline">What is sent </dt>
+                <dd className="inline text-soft">{approval.web.sends}</dd>
+              </div>
+              <div>
+                <dt className="inline">Why you are asked </dt>
+                <dd className="inline text-soft">{approval.web.because}</dd>
+              </div>
+            </dl>
+          )}
           {approval.preview.length > 0 && (
             <ul className="mt-2 max-h-28 space-y-0.5 overflow-hidden text-xs text-mute">
               {approval.preview.slice(-6).map((line, index) => (
@@ -229,7 +264,7 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
           )}
           <div className="mt-3 flex gap-2">
             <button type="button" onClick={() => decide(approval, "approve")} className="rounded-md bg-bone px-4 py-1.5 text-sm font-medium text-void hover:bg-white">
-              {approval.kind === "cloud_egress" ? "Send it" : "Yes, do it"}
+              {approval.web ? (approval.web.kind === "search" ? "Search" : "Open it") : approval.kind === "cloud_egress" ? "Send it" : "Yes, do it"}
             </button>
             <button type="button" onClick={() => decide(approval, "deny")} className="rounded-md border border-line px-4 py-1.5 text-sm text-soft hover:border-mute">
               No

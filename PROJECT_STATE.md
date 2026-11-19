@@ -5,24 +5,60 @@ session needs to continue without the earlier conversation. Rewrite it at the
 end of every session. `docs/ROADMAP.md` holds the plan; this file holds where
 the work actually is.
 
-**Last updated:** 16 November 2026
+**Last updated:** 19 November 2026
 
 ## 1. Snapshot
 
 | | |
 |---|---|
-| Current work | The acceptance checks between Phase 2 and Phase 3, on the Windows laptop |
-| State | The AI and voice stack is built, tested and documented on the Mac. The preparation for the acceptance checks (measuring tools, the checklist with the marks the owner confirmed, an empty results table) is done on the Mac too. Both are on `main` and pushed. Setup on the laptop has begun: its first run of the core tests failed in the HTTP tests (reported by the owner on 16 November 2026). The cause was how the tests clean up, not the app. The fix is one commit on the Mac, **not pushed and not on `main` yet**, and it has not run on Windows. **No acceptance check has been reported from the laptop** |
-| Branch | `fix/http-test-cleanup`, one commit ahead of `main`, on the Mac only. `main` is the same as `origin/main` (`c33330d`). Nothing is uncommitted. Two old branches exist on the Mac only and hold nothing more: `feature/ai-voice-stack` and `laptop-acceptance` |
-| Tests | 108 of 108 in the core, 75 of 75 in the voice worker, type check clean, all on the Mac |
+| Current work | Web access (Phase 2.5): HELIOS searches the web and reads pages. Built and tested on the Mac on 18 and 19 November 2026, and committed on its own branch as a local checkpoint. It waits for the owner's word to push, for a search key, and for a run on the laptop |
+| State | The AI and voice stack, the preparation for the acceptance checks and the fix for the Windows test failure are on `main` and pushed. The laptop added one commit on 17 November (`a3e834a`, "Integrate GPT-OSS 20B and improve voice diagnostics"). Web access is built on top of that, on the Mac. It is one commit on its own branch, **not pushed and not on `main`**: on 19 November the owner approved it as a local checkpoint and said not to push, merge or deploy yet. What the laptop has run is known on the Mac only from what the owner said (below) |
+| Branch | `feature/web-access`, made from `main` at `a3e834a` and one commit ahead of it, on the Mac only. Nothing is uncommitted. `main` is the same as `origin/main`. Three older branches exist on the Mac only and hold nothing more: `feature/ai-voice-stack`, `laptop-acceptance`, `fix/http-test-cleanup` |
+| Tests | 188 of 188 in the core (108 before, 80 for web access), 75 of 75 in the voice worker, type check clean, the screen builds, all on the Mac |
 | Next phase | Phase 3 (memory and second brain). **Do not start it until the owner explicitly authorises it** |
 
-Three things are not verified anywhere: a real microphone and speakers, a
-real Claude call, and everything on the Windows laptop.
+Not verified anywhere: a real microphone and speakers (as far as the Mac
+knows), a real Claude call, a web search with a real key, and the laptop's
+model using the web tools.
 
-A session on the laptop starts with `docs/LAPTOP-SETUP.md` and ends with
-`docs/PHASE-2-ACCEPTANCE.md`. This file was written on the Mac: every
-result in it is a Mac result.
+A session on the laptop starts with `docs/LAPTOP-SETUP.md`. Its section 9
+and `docs/WEB-ACCESS.md` are the part for web access. This file was written
+on the Mac: every result in it is a Mac result.
+
+### The owner's instruction for web access (18 November 2026)
+
+- Build live web search and page retrieval into HELIOS's existing
+  assistant: an implementation, with tests and a report. The feature is
+  done when HELIOS can take a question that needs current public
+  information, run an approved live search, open pages safely, answer with
+  working source links, report failures honestly, do the same by voice,
+  and pass the automated security and regression tests.
+- The laptop's only local model is `gpt-oss:20b` through Ollama, with
+  medium reasoning and a test context of 4,096 tokens. Keep it as the
+  reasoning engine. Do not add another local model, and do not use a cloud
+  model to do the searching.
+- The Windows test environment uses its own data folder on port 7127. Do
+  not assume the model is installed on the Mac.
+- Do not build Claude API integration or Phase 3 memory now. Do not change
+  the voice engine or unrelated parts of the screen. Do not modify the
+  Official Style Guide PDF (no such file is in this repository).
+- Treat everything from the web as untrusted data. No private record,
+  conversation, account detail or file goes to a search service on its
+  own; private or sensitive query content needs the owner's yes first.
+- Never commit secrets or real personal data.
+- **Do not push automatically.** Leave the changes ready for review and
+  commit.
+
+On 19 November 2026 the owner approved the work as a local development
+checkpoint: one commit on `feature/web-access`, with the message "feat:
+implement HELIOS live web intelligence". **No push, no merge into `main`
+and no deploy yet.** The advisory for `@fastify/static` (section 9, point
+23) is to be left as it is, for a step of its own.
+
+What the owner said about the laptop in that message, not seen from the
+Mac: the model above is in use there, and the latest commit both machines
+share is `a3e834a`. Nothing was said about the results of the acceptance
+checks in `docs/PHASE-2-ACCEPTANCE.md`.
 
 ### The owner's instruction for this stage (15 November 2026)
 
@@ -75,7 +111,8 @@ microphone about two metres away.
 |---|---|
 | 1. Foundation | Done on the Mac, pushed. Not yet verified on Windows: its tests ran there once and failed in one file (section 7) |
 | 2. HELIOS core | Core done and pushed: conversation, tools with risk tiers, approvals, cloud gate, conversation search, sales with its screen. Not everything in the roadmap's Phase 2 list is finished; see `docs/ROADMAP.md` |
-| AI and voice stack | Done on the Mac, merged and pushed. Not yet run on Windows. What is still open is in sections 9 and 11 |
+| AI and voice stack | Done on the Mac, merged and pushed. What is still open is in sections 9 and 11 |
+| 2.5 Web access | Built and tested on the Mac, committed on its own branch, not pushed. Not run with a real search key, with the laptop's model, or on Windows |
 | 3. Memory and second brain | Not started |
 | 4. Neural interface (3D brain) | Not started. The screen has a 2D canvas brain as a stand-in |
 | 5. Action and integrations | Not started |
@@ -99,7 +136,9 @@ Rules that hold everywhere:
   `~/.local/share/homebase`. Override with `HOMEBASE_DATA_DIR`. Other
   variables: `HOMEBASE_PORT` (default 7117), `HOMEBASE_MODELS_DIR`,
   `HOMEBASE_DEV_HOSTS`. The port can also be set in `config.json` in the data
-  folder.
+  folder. Keys are environment variables too, read from a `.env` file that
+  git ignores: `ANTHROPIC_API_KEY`, and for web search
+  `BRAVE_SEARCH_API_KEY` or `TAVILY_API_KEY`.
 - **No data loss.** Numbered SQL migrations with checksums, each in a
   transaction, with a snapshot taken first. The core refuses a database newer
   than itself, an edited migration, and a blank database where there are
@@ -124,7 +163,8 @@ Full detail, measurements and sources: `docs/AI-VOICE-STACK.md`.
 
 | Part | Choice | Runtime | State on the Mac |
 |---|---|---|---|
-| Local model | `qwen3.5:4b`, 8K context | Ollama 0.19 or newer | Ran through the whole HELIOS loop with tools. **Not installed right now**, see section 9 |
+| Local model | `qwen3.5:4b`, 8K context (the default in the code) | Ollama 0.19 or newer | Ran through the whole HELIOS loop with tools. **Not installed right now**, see section 9 |
+| Local model on the laptop | `gpt-oss:20b`, medium reasoning, 4,096 tokens of context (set in that machine's `config.json`; `think` may now be `low`, `medium` or `high`) | Ollama on the laptop | Never run on the Mac. Stated by the owner on 18 November 2026 |
 | Hard reasoning | `claude-sonnet-5-5` | Anthropic SDK | Written, tested against a fake. Never called for real |
 | Light and background | `claude-haiku-5-5` | Anthropic SDK | Same |
 | Stand-in | Rule-based, no model | In the core | Works. Answers when nothing else is available |
@@ -215,6 +255,50 @@ Code: `apps/voice/helios_voice/models.py` and `models.json` next to it.
 - A file the list does not know, such as a wake model trained later, is
   loaded unchecked.
 
+### Web access
+
+Full description: `docs/WEB-ACCESS.md`. Code: `apps/core/src/web`,
+`apps/core/src/ai/webTools.ts`, and the turn loop in
+`apps/core/src/ai/helios.ts`.
+
+- Two tools for the model: `search_web` (a query, and optionally how
+  recent) and `read_webpage` (the number of a search result, or an address
+  the owner gave, and a question). The same model that answers everything
+  else uses them.
+- Search goes through a search service's API: Brave Search when
+  `BRAVE_SEARCH_API_KEY` is set, otherwise Tavily with `TAVILY_API_KEY`.
+  Pages are fetched by the core itself.
+- Off until the owner switches it on (main screen, top right, with the
+  password; or `web.enabled` in `config.json`). `web.confirmEvery` makes
+  every request wait for a yes.
+- Only public `https` websites are contacted. The check is made again at
+  the moment of connecting and on every redirect.
+- What a request may carry is decided by fixed rules
+  (`apps/core/src/web/policy.ts`). Anything that could be private waits for
+  the owner's yes, as an approval of kind `tool` and tier 2, and the turn
+  continues from what came back once the yes is given. A key-like value is
+  refused.
+- Once text from the web was read in a turn, every action of tier 1 or
+  higher waits for a yes for the rest of that turn, also with
+  `ai.autoApproveTier1` on.
+- The model sees numbered results and site names, never addresses. A page
+  keeps its number for the whole conversation. The answer's sources are
+  built by the core from the tool results and stored with the answer
+  (`messages.content`, field `web`); a citation that matches no source is
+  removed.
+- Web results are sized to the model's context from the token counts the
+  model reports, and are shown in short form in later turns.
+- Tools may now be asynchronous and may look at one request before it runs
+  (`check` in `apps/core/src/ai/tools.ts`). The seven older tools are
+  unchanged.
+- A new state, `browsing` ("Searching the web"), and a new event,
+  `activity`, for the line of feedback while a request runs.
+- The voice says an answer without source numbers and addresses
+  (`apps/core/src/voice/speakable.ts`). The voice worker is unchanged.
+- No migration: web requests use the existing `approvals` and `egress_log`
+  tables.
+- One new package: `parse5`, to read HTML.
+
 ### Acceptance checks and their tools
 
 The checks, the mark for each and the results table: `docs/PHASE-2-ACCEPTANCE.md`.
@@ -249,25 +333,33 @@ confirmed (section 1).
 
 ## 6. Git state
 
-`main` is pushed: `origin/main` is the same commit, `c33330d`. Nothing is
-uncommitted. The history is one line, without merge commits. Every push
-was a normal one, made after the audit in section 13 and on the owner's
-yes.
+`main` is pushed: `origin/main` is the same commit, `a3e834a`. The history
+is one line, without merge commits. Every push from the Mac was a normal
+one, made after the audit in section 13 and on the owner's yes.
 
-**One commit is not on `main` and not pushed.** It is on the branch
-`fix/http-test-cleanup`, on the Mac only, made on 16 November 2026: the
-fix for the test failure the laptop found (section 7). The owner asked for
-it to be committed and not pushed yet. With the owner's yes it reaches the
-laptop the usual way: the audit, `main` moved forward to it, a normal push.
+**Web access is one commit that is not on `main` and not pushed.** It is
+on the branch `feature/web-access` (made from `a3e834a`), on the Mac only,
+made on 19 November 2026 with the message "feat: implement HELIOS live web
+intelligence". This file is part of that commit, so its number is not
+written here; `git log -1 feature/web-access` shows it. It holds 42 files:
+the new folder `apps/core/src/web`, three other new source files, two new
+test files, one new document, and changes to existing files of the core,
+the screen, the shared types and the documents. `package.json` of the core
+and `package-lock.json` changed for one new package, `parse5`. Nothing
+under `.claude`, `private`, `home-base` or `repos` is part of it, and no
+`.env` file exists. With the owner's yes it reaches the laptop the usual
+way: the audit, `main` moved forward to it, a normal push.
+
+The two newest commits on `main`:
 
 | Commit | What |
 |---|---|
-| the newest, on `fix/http-test-cleanup` | Keep the HTTP tests' shared folder until its server and database are closed. This file is part of that commit, so its number is not written here; `git log -1 fix/http-test-cleanup` shows it |
+| `359f898` | Keep the HTTP tests' shared folder until its server and database are closed. Made on the Mac, pushed on 16 November 2026 on the owner's yes |
+| `a3e834a` | Integrate GPT-OSS 20B and improve voice diagnostics. Made on the laptop on 17 November 2026: `think` in the local model's settings may be `low`, `medium` or `high`; the voice worker names the kind of a text-encoding error. Its git name differs from the one on the Mac's commits; whether that is meant is the owner's to say |
 
 The preparation for the acceptance checks is the three commits before
-that, the last three on `main`. It was made on the branch
-`laptop-acceptance` and came into `main` on 15 November 2026 by moving
-`main` forward to it.
+those. It was made on the branch `laptop-acceptance` and came into `main`
+on 15 November 2026 by moving `main` forward to it.
 
 | Commit | What |
 |---|---|
@@ -300,14 +392,82 @@ Before these, `main` held 15 commits, up to `46a8d33`.
 
 ## 7. Tests
 
-Run on 16 November 2026 on the Mac, on the commit with the fix
-(`fix/http-test-cleanup`):
+Run on 19 November 2026 on the Mac, on what the web access commit holds:
 
 | Command | Result |
 |---|---|
-| `npm test` | 108 passed, 0 failed (8 files) |
+| `npm test` | 188 passed, 0 failed (10 files) |
 | `npm run typecheck` | clean |
+| `npm run build` | the screen builds |
 | `cd apps/voice && uv run pytest` | 75 passed, 0 failed |
+
+### Web access: what was tested
+
+80 new tests in the core, in `apps/core/test/web.test.ts` (41: each part
+on its own) and `apps/core/test/helios-web.test.ts` (39: inside a
+conversation). The 108 earlier tests are unchanged and pass. In all of
+them the internet is played by the tests: a search service and a few
+websites that exist only in memory. No test contacts a real service, and
+no test needs a key.
+
+| What | Where it is tested |
+|---|---|
+| A search that works; a page that is read | "answering from the live web"; "searching the web"; "reading a page" |
+| No results; no search service set up; web access off | "when the web does not work" |
+| A service that times out or answers with something unreadable | "reports each kind of failure as what it is"; "reports a search that failed" |
+| Local and private addresses are not contacted | "which addresses HELIOS may contact"; "where a name really leads" |
+| Redirects and address checks | "follows redirects by hand and checks every address on the way" |
+| A hostile page | "text from the web is information, never an instruction" (five tests: the page as data, no change without a yes, no details sent away, key-like values refused, searches after records wait for a yes) |
+| The owner's yes and what may be sent out | "the owner's yes for what leaves this machine"; "what may be sent out"; "the switch for web access" |
+| Sources are the real ones | "takes its sources from what the tools returned, never from what the model writes" |
+| Through the existing turn loop | every test in `helios-web.test.ts` runs through `Helios.handleMessage` with a scripted model |
+| A context of 4,096 tokens | "a small context window" |
+| By voice | "by voice" |
+| Nothing else broke | the 108 earlier tests |
+
+Each protection was then switched off once, one at a time (an address rule
+dropped, a redirect not checked, a limit removed, a rule about what may be
+sent ignored, and so on), to see whether a test fails. Of the first 78, 73
+made a test fail at once. Five did not: a circle of redirects, menus and
+footers inside an article, the switch at the place where requests are
+made, an empty page, and a missing search service noticed before anything
+is tried. In four of them a second check caught the same thing, which is
+why no test failed; the fifth was a test that was too loose. Tests were
+added or tightened until every one made a test fail.
+
+Reading the finished code once more turned up one thing no test had asked
+about: while an approved web request was under way, a new message could
+have been written into the same conversation. HELIOS now counts as
+answering for the whole of an approved request. That is the 79th
+protection, with its own test. All 79 now make a test fail when switched
+off.
+
+All 188 core tests were also run with Windows' rule imitated (a folder
+cannot be deleted while a file in it is open; section 9, point 18): all
+passed, and none of 245 deletions had an open file.
+
+Also done by hand on the Mac, with the real core on a scratch data folder
+(port 7127), the stand-in model, and a stand-in search service on the
+machine itself that answers in Brave Search's format:
+
+- With web access off, "Search the web for ..." was answered with "Web
+  access is switched off on this machine", and the screen showed "The web
+  was not reached".
+- "Turn on" asked for the password, and then showed "Web access on · Brave
+  Search".
+- A search showed three numbered results as links. "Open source 2" fetched
+  a real public page (`www.iana.org/help/example-domains`) through the
+  guarded fetcher and showed its text with "1 page read".
+- With `confirmEvery` on, a card "Leaves this machine" showed the query,
+  the service and the reason; "Search" ran it and the answer followed.
+- A search the stand-in service answered with an error was shown as "Could
+  not do it: The search service had a problem of its own (status 503)".
+- `web read` on the command line read real pages from four public sites,
+  and refused `https://localhost/` and the cloud metadata address.
+
+**Not done:** a search with a real key (none exists), the laptop's model
+using the tools, anything on Windows, a spoken web search through a real
+microphone.
 
 The AI and voice stack itself (`9cc1656`) had 98 and 54; both passed on
 it. The preparation for the acceptance checks added 2 in the core (the
@@ -370,8 +530,10 @@ among them the original mistake with and without the new refusal:
   folder and closed nowhere. It failed only with the rule imitated, as it
   would on Windows (section 9, point 18).
 
-**Not done:** the fix has not run on Windows. An imitation on a Mac is not
-a Windows result.
+The fix was pushed on 16 November 2026 (`359f898`), and the laptop's own
+commit of 17 November sits on top of it. Whether the core tests then passed
+on Windows has not been reported to the Mac. An imitation on a Mac is not a
+Windows result.
 
 Of the 75 voice tests, 7 use the real speech models and are skipped on a
 machine that does not have them, and 1 needs the optional `openwakeword`
@@ -464,10 +626,12 @@ laptop session can read it from the log; no exchange has been spoken yet.
    which needs 0.19 or newer. The test used the current release run
    separately on another port with its own model store; both were removed
    afterwards. The owner's install was not touched.
-4. **Nothing has passed on Windows.** The core tests ran on the laptop and
-   failed in the HTTP tests (section 7). The fix has not run there. Nothing
-   else has been reported from the laptop: not the voice tests, not the
-   models, not the benchmarks.
+4. **What has passed on Windows is not known on the Mac.** The core tests
+   ran on the laptop on 16 November and failed in the HTTP tests (section
+   7); the fix was pushed the same day. On 18 November the owner said the
+   laptop runs `gpt-oss:20b` on a test instance on port 7127. No test
+   result, benchmark or acceptance check from the laptop has reached this
+   file or `docs/PHASE-2-ACCEPTANCE.md`.
 5. **"Hey Helios" is not trained.** Wake mode is wired but has no model for
    that phrase.
 6. **Words-as-you-speak is not wired in.** The streaming Parakeet export
@@ -516,6 +680,35 @@ laptop session can read it from the log; no exchange has been spoken yet.
     form stays invisible on a Mac: something opened in a shared test folder
     and never closed. Only a test run on Windows shows it, so the core
     tests have to be run on the laptop after every change to them.
+19. **No web search has run against a real service.** No account and no key
+    exist. The connections to Brave Search and Tavily were written from
+    their documentation as read on 18 November 2026 and are tested against
+    stand-ins only. The first real search is check W1 in
+    `docs/WEB-ACCESS.md`. If a service refuses a request, the status code
+    in HELIOS's message says which kind of refusal it was.
+20. **The laptop's model has not used the web tools.** Whether
+    `gpt-oss:20b` decides to search when it should, writes a usable query,
+    opens a result by its number and cites it as `[1]` is not known. The
+    core does not depend on it for safety, only for usefulness.
+21. **4,096 tokens is very little for web search.** Ollama's own guidance
+    is 32,000 or more. The core sizes what it returns from the token counts
+    the model reports, and keeps a quarter of the context free. How much
+    the tool descriptions and the model's reasoning really take on the
+    laptop is not measured; if answers are cut off, raising
+    `ai.local.contextTokens` is the first thing to try, memory permitting.
+22. **The search key is an environment variable**, like the cloud key
+    (point 10).
+23. **`@fastify/static` has a published advisory.** `npm audit` reports it
+    for the version in use (and two lesser ones in packages it pulls in).
+    It was there before web access and is not caused by it. The core's own
+    login check sits in front of every `/api` route and does not rely on
+    that package; whether the advisory matters here has not been looked
+    into, and the package has not been updated. On 19 November the owner
+    set this aside for a step of its own.
+24. **One layout change outside web access.** The transcript under the
+    brain is now cut off at the top of its own area when it is taller than
+    that area, instead of running upwards over the screen. Sources under an
+    answer made that happen more often.
 
 ## 10. Decisions already made
 
@@ -567,28 +760,33 @@ laptop session can read it from the log; no exchange has been spoken yet.
    on paper). Still the owner's to choose: which folder, and whether the
    laptop may hold the key or only a public half that can encrypt but not
    read.
+10. Web access: say when the commit on `feature/web-access` is to be
+    pushed and brought into `main`. Until then the laptop cannot get it.
+11. Web access: which search service, and create its key. Brave Search asks
+    for a card at sign-up and says it does not share queries or train on
+    them; Tavily needs no card and may use queries to improve its service.
+    Both have a free monthly allowance of about 1,000 searches
+    (`docs/WEB-ACCESS.md`).
+12. Web access: whether every request should wait for a yes
+    (`web.confirmEvery`). Off by default: only requests that could carry
+    something private wait.
 
 ## 12. Exact next steps
 
-In this order. Everything the laptop needs is on GitHub, except the fix
-in step 1. Steps 1 and 3 to 7 need the owner in the room or a decision of
-the owner.
+In this order. Steps 1 to 5 and 7 need the owner in the room or a decision
+of the owner.
 
-1. **Bring the fix for the failing tests to the laptop.** It is one commit
-   on `fix/http-test-cleanup` on the Mac, not pushed (section 6). With the
-   owner's yes: the audit, `main` moved forward to it, a normal push. On
-   the laptop: `git pull`, then `npm test`. Expect 108 of 108. Write what
-   actually happened into the failures table of
-   `docs/PHASE-2-ACCEPTANCE.md`; its row for this failure still says "Not
-   run again on the laptop". If the laptop has changes of its own in files
-   this commit touches, commit or set them aside before pulling.
-2. **Windows laptop, setup.** Follow `docs/LAPTOP-SETUP.md`, sections 1 to
-   7. The repository is on the laptop already, since the tests were run
-   there; how far the rest of setup got is not known on the Mac. The owner
-   brings the export file over separately; it never goes through the
-   repository. Before the first commit there, set the git identity
-   (section 13).
-3. **Windows laptop, acceptance checks.** Section 8 of the setup plan and
+1. **Push web access, when the owner says so.** It is one commit on
+   `feature/web-access` on the Mac; `docs/WEB-ACCESS.md` explains it. With
+   the owner's yes: the audit (section 13), `main` moved forward to it, a
+   normal push. The owner has said not to push, merge or deploy yet.
+2. **Web access on the laptop.** After the push: `git pull`, `npm install`
+   (one new package), `npm run build`, `npm test`. Create a search key, put
+   it in `.env`, and follow section 9 of `docs/LAPTOP-SETUP.md` and the
+   checks W1 to W10 in `docs/WEB-ACCESS.md`, on the test instance on port
+   7127. Write the results into that page's table.
+3. **Windows laptop, acceptance checks of Phase 2**, as far as they are
+   still open. Section 8 of the setup plan and
    `docs/PHASE-2-ACCEPTANCE.md`, in that page's order (the owner's
    priorities), on the scratch copy described there. The checks with a
    microphone or speakers need the owner in the room. Write every result,
@@ -658,6 +856,16 @@ updated first; section 11, point 2).
   are for one test; what a whole file shares goes through
   `sharedAcrossTests()` (`apps/core/test/helpers.ts`).
 - **Never log what was said or typed.** Logs hold kinds of events only.
+  The same goes for what HELIOS searches for and which pages it opens.
+- **Automated tests never touch the internet.** Search services and
+  websites are played by the tests. A real search or page fetch is made
+  only by hand, with the owner's key, on purpose.
+- **Text from the web is data.** Nothing a page says is followed, and no
+  change to the web code may let a page cause an action, raise a
+  permission or decide what is sent out. Each of those protections has a
+  test that fails when it is switched off (section 7); keep it that way.
+- **No key in the repository.** Search keys and the cloud key live in
+  `.env`, which git ignores, on each machine.
 - **A model changes in `models.json`, in a commit.** Never make a check pass
   by editing a hash to match a file that arrived differently.
 
@@ -669,6 +877,7 @@ updated first; section 11, point 2).
 | Design documents | `docs/` |
 | Speech models (about 2.3 GB) | `models` inside the data folder: `stt`, `vad`, `tts`, `wake`. What belongs there is listed in `apps/voice/helios_voice/models.json`. The `SHA256SUMS` file there is from the first download and is no longer used |
 | Voice samples | `voice-audition` inside the data folder |
+| Keys (cloud, web search) | `.env` next to `package.json`, ignored by git. None exists on the Mac |
 | The owner's real export | `private/artifact-export/`, ignored by git |
 | The old Next.js version | `private/legacy-nextjs-2026-11-15/`, ignored by git |
 
@@ -681,6 +890,9 @@ npm start                        # start the core (default port 7117)
 npm test                         # core tests
 npm run typecheck
 npm run homebase -- status       # also: owner set-password, backups, restore, audit verify, import
+npm run homebase -- web status                  # is web access on, and which search service
+npm run homebase -- web check <words>           # one real search with the key in .env
+npm run homebase -- web read <https address>    # fetch one page the way HELIOS does
 
 cd apps/voice
 uv sync                          # once

@@ -16,6 +16,7 @@ const ACTIVITY: Record<HeliosState, { spin: number; signals: number }> = {
   transcribing: { spin: 0.05, signals: 4 },
   thinking: { spin: 0.1, signals: 7 },
   retrieving: { spin: 0.14, signals: 12 },
+  browsing: { spin: 0.14, signals: 12 },
   speaking: { spin: 0.06, signals: 4 },
   acting: { spin: 0.11, signals: 9 },
   presenting: { spin: 0.02, signals: 0.5 },

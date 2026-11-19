@@ -16,6 +16,7 @@ const STATE_LABEL: Record<HeliosState, string> = {
   transcribing: "Transcribing",
   thinking: "Thinking",
   retrieving: "Searching memory",
+  browsing: "Searching the web",
   speaking: "Speaking",
   acting: "Working",
   presenting: "Presenting",
@@ -126,6 +127,7 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
           {status && (
             <div className="mt-3 space-y-1 text-sm text-mute">
               {helios && <ModelLine helios={helios} />}
+              {helios?.web && <WebLine web={helios.web} onChanged={loadStatus} />}
               <p>
                 Last snapshot <span className="text-soft">{ago(status.snapshots.newestAt, now)}</span>
               </p>
@@ -187,6 +189,78 @@ function ModelLine({ helios }: { helios: HeliosStatus }) {
           <span className="text-soft">
             €{helios.budget.spentEur.toFixed(2)} of €{helios.budget.capEur.toFixed(0)}
           </span>
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Whether HELIOS may use the web, and the switch for it. Off works at once.
+ * On lets more leave this machine, so the core asks for the password again.
+ */
+function WebLine({ web, onChanged }: { web: HeliosStatus["web"]; onChanged: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const set = async (enabled: boolean) => {
+    setError("");
+    try {
+      await api("PUT", "/api/web/settings", { enabled });
+      setAsking(false);
+      setPassword("");
+      onChanged();
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 403) setAsking(true);
+      else setError(caught instanceof ApiError ? caught.message : "The core is not answering.");
+    }
+  };
+  const confirm = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await api("POST", "/api/auth/elevate", { password });
+    } catch (caught) {
+      setPassword("");
+      setError(caught instanceof ApiError ? caught.message : "The core is not answering.");
+      return;
+    }
+    await set(true);
+  };
+
+  const state = !web.enabled ? "off" : web.ready ? `on · ${web.service}${web.confirmEvery ? " · asks every time" : ""}` : "on · no search key";
+  return (
+    <>
+      <p>
+        Web access <span className={web.enabled && !web.ready ? "text-salmon/80" : "text-soft"}>{state}</span>
+        <button type="button" onClick={() => void set(!web.enabled)} aria-pressed={web.enabled} className="ml-3 text-xs tracking-widest text-mute uppercase hover:text-bone">
+          Turn {web.enabled ? "off" : "on"}
+        </button>
+      </p>
+      {asking && (
+        <form onSubmit={confirm} className="flex items-center justify-end gap-2">
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            autoFocus
+            required
+            aria-label="Your password, to turn web access on"
+            placeholder="Password, to turn it on"
+            className="w-44 border-b border-line bg-transparent py-1 text-sm text-bone outline-none placeholder:text-mute focus:border-salmon/60"
+          />
+          <button type="submit" className="text-xs tracking-widest text-soft uppercase hover:text-bone">
+            Confirm
+          </button>
+          <button type="button" onClick={() => setAsking(false)} className="text-xs tracking-widest text-mute uppercase hover:text-bone">
+            Cancel
+          </button>
+        </form>
+      )}
+      {error && (
+        <p role="alert" className="text-salmon">
+          {error}
         </p>
       )}
     </>

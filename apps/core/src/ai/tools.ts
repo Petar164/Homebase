@@ -4,9 +4,12 @@ import type { Config } from "../config.ts";
 import type { Db } from "../db/open.ts";
 import { buildOverview } from "../domain/overview.ts";
 import { createTask, listTasks, updateTask } from "../domain/tasks.ts";
+import type { WebAccess } from "../web/service.ts";
+import type { SourceBook } from "../web/sources.ts";
 import { hitsSensitivity, searchConversations } from "./memory.ts";
 import { budgetStatus } from "./policy.ts";
-import type { Sensitivity, ToolSpec } from "./types.ts";
+import type { Sensitivity, ToolResult, ToolSpec } from "./types.ts";
+import { WEB_TOOLS } from "./webTools.ts";
 
 // What HELIOS can do. A model never touches the database: it can only ask
 // for one of these tools, by name, with input that is checked against the
@@ -20,6 +23,56 @@ import type { Sensitivity, ToolSpec } from "./types.ts";
 //
 // Every tool also labels its output, so the core knows how private the
 // conversation has become and whether it may still go to a cloud model.
+//
+// The two web tools (webTools.ts) are the only ones that reach outside this
+// machine. Their tier is 0 for a request that carries nothing private, and
+// is raised per request by `check` when it might (web/policy.ts).
+
+/** What a turn has done so far. Rules that depend on it read it from here, never from a model. */
+export type TurnFacts = {
+  /** What the owner said to start this turn. */
+  ownerText: string;
+  /** Everything the owner said in this conversation, for the web addresses they gave themselves. */
+  ownerTexts: string[];
+  /** True once text from the web was read in this turn. From then on nothing is changed on a standing permission. */
+  webRead: boolean;
+  /** True once a Home Base record was read in this turn. */
+  recordsRead: boolean;
+  /** The text of Home Base records this conversation has read. */
+  records: string[];
+  /** Web requests sent in this turn. */
+  searches: number;
+  pages: number;
+  /** The numbered web pages this conversation has seen. */
+  sources: SourceBook;
+  /** How many characters of new text the model's context still has room for. */
+  roomChars: number;
+};
+
+export type ToolContext = {
+  db: Db;
+  config: Config;
+  now: Date;
+  conversationId: string;
+  /** HELIOS's access to the web. Absent in a core that was started without it. */
+  web?: WebAccess;
+  turn: TurnFacts;
+  /** True when the owner has just approved exactly this request on screen. */
+  approved?: boolean;
+};
+
+/** What a tool hands back besides the text for the model. */
+export type ToolOutput = string | ({ output: string; sensitivity: Sensitivity; failed?: boolean } & Pick<ToolResult, "brief" | "sources" | "web">);
+
+/** A closer look at one request: it may need a yes although the tool normally runs at once, or be refused outright. */
+export type ToolCheck = {
+  /** Raises the tier for this one request. */
+  tier?: 1 | 2 | 3;
+  /** Shown to the owner with the request for a yes: what would be sent, to whom, and why they are asked. */
+  web?: { kind: "search" | "page"; sends: string; to: string; because: string };
+  /** The request is not carried out. `say` is for the model, `failure` for the owner. */
+  refuse?: { say: string; failure: string; kind: string; web?: ToolResult["web"] };
+};
 
 export type Tool<Input = unknown> = {
   name: string;
@@ -29,14 +82,20 @@ export type Tool<Input = unknown> = {
   sensitivity: Sensitivity;
   /** Set for tools that search memory, so the screen can show "searching". */
   searches?: boolean;
+  /** "web": the tool reaches the public internet and returns text that nobody here wrote. */
+  reach?: "web";
   input: z.ZodType<Input>;
   /** One line shown to the owner when a yes is needed. */
-  describe(input: Input): string;
+  describe(input: Input, context?: ToolContext): string;
+  /** Looks at one request before it runs. Without it, the tier alone decides. */
+  check?(input: Input, context: ToolContext): ToolCheck;
+  /** For web tools: what the screen says while the request is under way. Only what the owner may see anyway. */
+  activity?(input: Input, context: ToolContext): { kind: "search" | "page"; label: string };
   /** Returns the output, or the output with its own label when that depends on what was found. */
-  run(input: Input, context: { db: Db; config: Config; now: Date; conversationId: string }): string | { output: string; sensitivity: Sensitivity };
+  run(input: Input, context: ToolContext): ToolOutput | Promise<ToolOutput>;
 };
 
-function define<Input>(tool: Tool<Input>): Tool {
+export function define<Input>(tool: Tool<Input>): Tool {
   return tool as unknown as Tool;
 }
 
@@ -193,6 +252,8 @@ export const TOOLS: Tool[] = [
       return JSON.stringify({ completed: task.title, nextOccurrence: next?.due ?? null });
     },
   }),
+
+  ...WEB_TOOLS,
 ];
 
 export function findTool(name: string): Tool | undefined {

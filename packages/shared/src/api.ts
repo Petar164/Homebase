@@ -49,10 +49,67 @@ export type SnapshotSummary = { id: string; createdAt: string; kind: string; not
 // ---------- HELIOS ----------
 
 /** What HELIOS is doing right now. The screen and the brain follow this. */
-export const HELIOS_STATES = ["idle", "listening", "transcribing", "thinking", "retrieving", "speaking", "acting", "presenting", "error"] as const;
+/** "retrieving" is searching its own memory; "browsing" is searching or reading the public web. */
+export const HELIOS_STATES = ["idle", "listening", "transcribing", "thinking", "retrieving", "browsing", "speaking", "acting", "presenting", "error"] as const;
 export type HeliosState = (typeof HELIOS_STATES)[number];
 
 export type ConversationSummary = { id: string; title: string; channel: "text" | "voice"; startedAt: string; lastMessageAt: string };
+
+/**
+ * A page HELIOS got from the live web. Its number is what an answer cites
+ * as [n]; it stays the same for the whole conversation. Sources only ever
+ * come from what a web tool really returned, never from a model's words.
+ */
+export type WebSource = {
+  n: number;
+  title: string;
+  url: string;
+  /** The site's host name, for example "example.org". */
+  site: string;
+  /** "page": HELIOS opened and read it. "result": it appeared in search results. */
+  kind: "result" | "page";
+  /** The date the page or the search service gave, as YYYY-MM-DD. Null when neither gave one. */
+  date: string | null;
+};
+
+/** How the live web was used for one answer. Absent on an answer that did not use it. */
+export type WebUse = {
+  /** True when at least one search or one page really came back for this answer. */
+  live: boolean;
+  /** Searches that were sent, and pages that were read. */
+  searches: number;
+  pages: number;
+  /** What did not work, in plain words. Empty when everything did. */
+  failures: string[];
+  /** The pages that were opened and the results the answer cites, in the order of their numbers. */
+  sources: WebSource[];
+};
+
+/** A web request while it is happening, for the line of feedback on screen. */
+export type WebActivity = {
+  id: string;
+  kind: "search" | "page";
+  /** What is being done, for example: Searching the web for "..." */
+  label: string;
+  /** "waiting" means the owner has been asked and nothing was sent. */
+  status: "running" | "done" | "failed" | "waiting";
+  /** Why it failed, or how much came back. */
+  detail: string | null;
+};
+
+/** Whether HELIOS may use the web right now. */
+export type WebStatus = {
+  /** The owner's switch. */
+  enabled: boolean;
+  /** True when a search could run right now. */
+  ready: boolean;
+  /** The search service in use, by name. */
+  service: string | null;
+  /** True when every web request needs a yes, not only the ones that may carry private details. */
+  confirmEvery: boolean;
+  /** Why it is not ready, in plain words. */
+  problem: string | null;
+};
 
 /** One line of a transcript, as the screen shows it. Tool traffic is left out. */
 export type ConversationMessage = {
@@ -65,6 +122,8 @@ export type ConversationMessage = {
   model: string | null;
   /** Why the router chose that model. */
   route: string | null;
+  /** Set on an answer for which the live web was searched or read. */
+  web?: WebUse | null;
 };
 
 /** A yes HELIOS is waiting for. */
@@ -76,6 +135,8 @@ export type Approval = {
   summary: string;
   /** For cloud approvals: what would be sent, message by message. */
   preview: { role: string; sensitivity: string; excerpt: string }[];
+  /** For web requests: exactly what would be sent, to whom, and why the owner is asked. */
+  web?: { kind: "search" | "page"; sends: string; to: string; because: string } | null;
   conversationId: string | null;
   status: "pending" | "approved" | "denied" | "expired";
   requestedAt: string;
@@ -90,6 +151,7 @@ export type HeliosStatus = {
   budget: { spentEur: number; warnEur: number; capEur: number; state: "ok" | "warning" | "capped" };
   /** False when the owner switched cloud models off. */
   cloudEnabled: boolean;
+  web: WebStatus;
 };
 
 export type TurnResult = {
@@ -104,4 +166,5 @@ export type CoreEvent =
   | { type: "state"; state: HeliosState }
   | { type: "message"; conversationId: string; message: ConversationMessage }
   | { type: "delta"; conversationId: string; text: string }
-  | { type: "approval"; approval: Approval };
+  | { type: "approval"; approval: Approval }
+  | { type: "activity"; conversationId: string; activity: WebActivity };

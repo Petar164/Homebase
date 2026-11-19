@@ -40,6 +40,8 @@ try {
   const voiceTransport = () => new ProcessTransport({ command: voiceCommand, cwd: path.join(APP_ROOT, "apps", "voice"), env: workerEnv(process.env, path.join(defaultDataDir(), "models")) });
   const { app, helios, voice } = await buildServer({ instance, log, webDir: WEB_DIST_DIR, extraHosts, providers, voiceTransport });
   log.info(voice ? "Voice is on: the voice worker is starting." : "Voice is off (set voice.enabled in config.json to turn it on).");
+  const web = (await helios.status()).web;
+  log.info(!web.enabled ? "Web access is off (switch it on from the screen, or set web.enabled in config.json)." : web.ready ? `Web access is on. Searches go to ${web.service}.` : `Web access is on, but ${web.problem}.`);
   await app.listen({ host, port });
 
   log.info(`Home Base ${APP_VERSION} is running at http://${host === "127.0.0.1" ? "localhost" : host}:${port}`);

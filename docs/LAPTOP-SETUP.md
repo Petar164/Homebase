@@ -98,7 +98,23 @@ answering itself, and the time from the end of speech to the first sound.
 
 A check is "Passed" only when it ran on this laptop and met its mark.
 
-## 9. Report back
+## 9. Web access (Phase 2.5)
+
+What it is and what leaves the machine: [WEB-ACCESS.md](WEB-ACCESS.md).
+Use the test instance on port 7127 for the checks.
+
+| Step | Check |
+|---|---|
+| `git pull`, `npm install` (one new package, `parse5`), `npm run build`, `npm test` | All tests pass on Windows |
+| Sign up with Brave Search or Tavily and create an API key. The costs and the differences are in the web access page | A key exists |
+| Put it in `.env` next to `package.json`, as `BRAVE_SEARCH_API_KEY=...` or `TAVILY_API_KEY=...` | `git status` does not list `.env` |
+| `npm run homebase -- web status` | The search service is named |
+| `npm run homebase -- web check latest local AI models` | Results come back, each with an address. This uses one search of the allowance |
+| `npm run homebase -- web read https://example.com/` | The page's text is printed |
+| Start the core. On the main screen, top right: "Web access off · Turn on", and enter the password | "Web access on" with the service's name |
+| Run the checks W1 to W10 of the web access page and fill in its table | Every line says "Passed" or "Failed", not "Not run" |
+
+## 10. Report back
 
 Write down what failed and what was changed, and update "Where the work
 stands" in [ROADMAP.md](ROADMAP.md) and [`PROJECT_STATE.md`](../PROJECT_STATE.md).
