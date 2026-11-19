@@ -11,10 +11,10 @@ the work actually is.
 
 | | |
 |---|---|
-| Current work | Web access (Phase 2.5): HELIOS searches the web and reads pages. Built and tested on the Mac on 18 and 19 November 2026, and committed on its own branch as a local checkpoint. It waits for the owner's word to push, for a search key, and for a run on the laptop |
-| State | The AI and voice stack, the preparation for the acceptance checks and the fix for the Windows test failure are on `main` and pushed. The laptop added one commit on 17 November (`a3e834a`, "Integrate GPT-OSS 20B and improve voice diagnostics"). Web access is built on top of that, on the Mac. It is one commit on its own branch, **not pushed and not on `main`**: on 19 November the owner approved it as a local checkpoint and said not to push, merge or deploy yet. What the laptop has run is known on the Mac only from what the owner said (below) |
-| Branch | `feature/web-access`, made from `main` at `a3e834a` and one commit ahead of it, on the Mac only. Nothing is uncommitted. `main` is the same as `origin/main`. Three older branches exist on the Mac only and hold nothing more: `feature/ai-voice-stack`, `laptop-acceptance`, `fix/http-test-cleanup` |
-| Tests | 188 of 188 in the core (108 before, 80 for web access), 75 of 75 in the voice worker, type check clean, the screen builds, all on the Mac |
+| Current work | Two pieces of work on one branch, both built, tested and committed on the Mac. Web access (Phase 2.5): HELIOS searches the web and reads pages. And a security fix of 19 November 2026: the package that serves the screen's files was brought to a version with the published fixes, and a hole in the login check, found on the way, was closed (section 7). Both wait for the owner's word to push. Web access also waits for a search key and for a run on the laptop |
+| State | The AI and voice stack, the preparation for the acceptance checks and the fix for the Windows test failure are on `main` and pushed. The laptop added one commit on 17 November (`a3e834a`, "Integrate GPT-OSS 20B and improve voice diagnostics"). Web access is built on top of that, on the Mac, and the security fix on top of web access. They are two commits on one branch, **not pushed and not on `main`**: on 19 November the owner approved each as a local step and said not to push, merge or deploy. **Until the second commit gets there, the hole in the login check is still in the code on GitHub and on the laptop** (section 9, point 23). What the laptop has run is known on the Mac only from what the owner said (below) |
+| Branch | `feature/web-access`, made from `main` at `a3e834a` and two commits ahead of it, on the Mac only. Nothing is uncommitted. `main` is the same as `origin/main`. Three older branches exist on the Mac only and hold nothing more: `feature/ai-voice-stack`, `laptop-acceptance`, `fix/http-test-cleanup` |
+| Tests | 201 of 201 in the core (108 before, 80 for web access, 13 for the screen's files and the login check), 75 of 75 in the voice worker, type check clean, the screen builds, `npm audit` finds nothing, all on the Mac |
 | Next phase | Phase 3 (memory and second brain). **Do not start it until the owner explicitly authorises it** |
 
 Not verified anywhere: a real microphone and speakers (as far as the Mac
@@ -52,13 +52,35 @@ on the Mac: every result in it is a Mac result.
 On 19 November 2026 the owner approved the work as a local development
 checkpoint: one commit on `feature/web-access`, with the message "feat:
 implement HELIOS live web intelligence". **No push, no merge into `main`
-and no deploy yet.** The advisory for `@fastify/static` (section 9, point
-23) is to be left as it is, for a step of its own.
+and no deploy yet.** The advisory for `@fastify/static` was to be left as
+it was, for a step of its own. That step was asked for the same day
+(below).
 
 What the owner said about the laptop in that message, not seen from the
 Mac: the model above is in use there, and the latest commit both machines
 share is `a3e834a`. Nothing was said about the results of the acceptance
 checks in `docs/PHASE-2-ACCEPTANCE.md`.
+
+### The owner's instruction for the file server's advisories (19 November 2026)
+
+- A focused security fix for the published advisories against
+  `@fastify/static`, on `feature/web-access`, as a commit of its own with
+  the message "fix: remediate Fastify static security advisories".
+- Look at the installed versions and the full `npm audit` report, check
+  the advisories, and move to a maintained version that has the fixes and
+  fits the Fastify in use. No `npm audit fix --force`, no new major
+  version of Fastify, no unrelated upgrades. If no safe upgrade exists, do
+  not force one: explain why, and propose the smallest safe way instead.
+- Look at how Home Base serves its files and protects its routes. Add
+  tests for addresses that climb out of the folder, encoded separators,
+  addresses not in their plain form, and getting past the login.
+- Fix the packages that one pulls in as well, where that does not unsettle
+  the project.
+- Run the core tests, the type check, the build and the voice tests. Keep
+  web access working.
+- **Do not modify real data, push, merge or deploy.**
+
+What was done is in section 7.
 
 ### The owner's instruction for this stage (15 November 2026)
 
@@ -109,7 +131,7 @@ microphone about two metres away.
 
 | Phase | State |
 |---|---|
-| 1. Foundation | Done on the Mac, pushed. Not yet verified on Windows: its tests ran there once and failed in one file (section 7) |
+| 1. Foundation | Done on the Mac, pushed. Not yet verified on Windows: its tests ran there once and failed in one file (section 7). Its login check had a hole; the fix is committed on the Mac and not pushed (section 7) |
 | 2. HELIOS core | Core done and pushed: conversation, tools with risk tiers, approvals, cloud gate, conversation search, sales with its screen. Not everything in the roadmap's Phase 2 list is finished; see `docs/ROADMAP.md` |
 | AI and voice stack | Done on the Mac, merged and pushed. What is still open is in sections 9 and 11 |
 | 2.5 Web access | Built and tested on the Mac, committed on its own branch, not pushed. Not run with a real search key, with the laptop's model, or on Windows |
@@ -337,18 +359,21 @@ confirmed (section 1).
 is one line, without merge commits. Every push from the Mac was a normal
 one, made after the audit in section 13 and on the owner's yes.
 
-**Web access is one commit that is not on `main` and not pushed.** It is
-on the branch `feature/web-access` (made from `a3e834a`), on the Mac only,
-made on 19 November 2026 with the message "feat: implement HELIOS live web
-intelligence". This file is part of that commit, so its number is not
-written here; `git log -1 feature/web-access` shows it. It holds 42 files:
-the new folder `apps/core/src/web`, three other new source files, two new
-test files, one new document, and changes to existing files of the core,
-the screen, the shared types and the documents. `package.json` of the core
-and `package-lock.json` changed for one new package, `parse5`. Nothing
-under `.claude`, `private`, `home-base` or `repos` is part of it, and no
-`.env` file exists. With the owner's yes it reaches the laptop the usual
-way: the audit, `main` moved forward to it, a normal push.
+**Two commits are not on `main` and not pushed.** They are on the branch
+`feature/web-access` (made from `a3e834a`), on the Mac only, both made on
+19 November 2026. This file is part of the newer one, so that one's number
+is not written here; `git log -2 feature/web-access` shows both.
+
+| Commit | What |
+|---|---|
+| `5b2ade0` | feat: implement HELIOS live web intelligence. 42 files: the new folder `apps/core/src/web`, three other new source files, two new test files, one new document, and changes to existing files of the core, the screen, the shared types and the documents. One new package, `parse5` |
+| the newest | fix: remediate Fastify static security advisories. 9 files: `apps/core/src/http/server.ts` (the login check, and two settings where the files are served), the new test file `apps/core/test/static.test.ts`, `package.json` of the core and `package-lock.json` (six packages, listed in section 7), and five documents |
+
+Nothing under `.claude`, `private`, `home-base` or `repos` is part of
+either, and no `.env` file exists. With the owner's yes they reach the
+laptop the usual way: the audit, `main` moved forward to the branch, a
+normal push. The two belong together on the way there: the second was made
+on top of the first.
 
 The two newest commits on `main`:
 
@@ -392,14 +417,157 @@ Before these, `main` held 15 commits, up to `46a8d33`.
 
 ## 7. Tests
 
-Run on 19 November 2026 on the Mac, on what the web access commit holds:
+Run on 19 November 2026 on the Mac, on what the newest commit holds:
 
 | Command | Result |
 |---|---|
-| `npm test` | 188 passed, 0 failed (10 files) |
+| `npm test` | 201 passed, 0 failed (11 files) |
 | `npm run typecheck` | clean |
 | `npm run build` | the screen builds |
 | `cd apps/voice && uv run pytest` | 75 passed, 0 failed |
+| `npm audit` | found 0 vulnerabilities |
+
+The first three gave the same results after a clean install from the
+lockfile (`npm ci`, 154 packages) in a scratch copy of the code.
+
+### The file server and the login check: what was found, changed and tested
+
+**What `npm audit` reported** for the web access commit: three findings,
+one high and two moderate, from four advisories.
+
+| Package | Version then | Advisory | Fixed in |
+|---|---|---|---|
+| `@fastify/static` | 9.3.0 | GHSA-83w8-p2f5-377r, high: a guard that an app puts in front of some of its served files can be passed with `..` in the address | 10.1.1 |
+| `@fastify/static` | 9.3.0 | GHSA-8pvw-jcv7-9cmj, moderate: the same with an address that is not in its plain form | 10.1.2 |
+| `glob`, which it pulls in | 13.0.7 | GHSA-3g3m-2fjr-6pw4, moderate: a file search that was told to stop goes on reading folders | 14.0.2 |
+| `minimatch`, which `glob` pulls in | 10.2.6 | GHSA-g3hv-75wg-m249, moderate: a search pattern that takes very long to work out | 11.0.1 |
+
+The package's release notes name two more security fixes: GHSA-r799-r9gc-m956
+in 10.1.4 (such guards on file systems that ignore letter case, as Windows
+and the Mac do) and GHSA-7533-p376-8gg5 in 10.1.12 (a folder listing that
+showed dot-named folders). None of these fixes exists for the 9 line.
+
+**Whether they mattered here.** None of them could be used against Home
+Base as it was. They are about apps that keep some served files behind a
+guard, list folders, or build search patterns from a request. Home Base
+serves one folder, the built screen, and all of it is public (the login
+page is in it); it lists no folders; and its protected routes are not
+files. With the old version installed, no file outside that folder could
+be fetched either: the 46 spellings of the test below were tried against
+it.
+
+**What changed in the packages.** `@fastify/static` went from 9.3.0 to
+10.1.12, the newest release and the only one with all of these fixes.
+Fastify itself stays at 5.12.8. The 10 line of the package is made for
+Fastify 5. Its breaking changes are in an option (`setHeaders`) and in
+file downloads (`reply.download`), and Home Base uses neither. Newer
+versions of what it pulls in came with it:
+
+| Package | Before | Now |
+|---|---|---|
+| `@fastify/static` | 9.3.0 | 10.1.12 |
+| `glob` | 13.0.7 | 14.0.6 |
+| `minimatch` | 10.2.6 | 11.0.9 |
+| `path-scurry` | 2.0.2 | 3.0.0 |
+| `content-disposition` | 1.1.0 | 3.1.0 |
+| `@isaacs/nonrecursive-glob-match` | not installed | 1.1.0 |
+
+Nothing else in `package-lock.json` changed, and `npm audit` now finds
+nothing. `npm audit fix --force` was not used.
+
+10.1.12 came out on the day of this change (19 November 2026, 14:42 UTC).
+Before it was taken: its files were compared with those of 10.1.11 (the
+difference is that one fix), the hash of the download equals the one in
+the lockfile, `npm audit signatures` confirmed the registry's signatures
+for all installed packages, and the package runs nothing at install time.
+
+**The login check: a fault in Home Base's own code**, not in the package,
+found while testing how addresses are read. The check looked at the text
+of the address: a request was asked for a login only if its address began
+with `/api/`. The router, which decides which route answers, reads an
+address more generously. It turns percent-codes back into letters, and it
+accepts a full address in the request line. So `/%61pi/tasks` and
+`http://localhost:7117/api/tasks` reached the tasks route without passing
+the check. Tried before the fix, on a test instance: the first returned
+the records without a login, and a `POST` to it created a task without a
+login.
+
+- Every route under `/api` could be reached this way without a login, to
+  read and to change, by any program on the same machine. Only what asks
+  for the password again stayed closed. The core answers on `127.0.0.1`
+  unless its settings say otherwise, so no other machine could reach it.
+- The check of where a request comes from was skipped along with the
+  login, so a website open in a browser on that machine could have sent
+  such requests too. How far that would have got was not tried. The check
+  of the `Host` header still applied.
+- The code is the same on GitHub and on the laptop until this commit gets
+  there. As far as this file knows, no instance with real records exists
+  yet (section 9, point 13).
+
+The check now goes by the route the router chose (`isApiRequest` in
+`apps/core/src/http/server.ts`). The text of the address is asked as well,
+as written and decoded, so that an address that only looks like the API
+gets the same answer as the API.
+
+**Two smaller changes where the files are served.** Files whose name
+starts with a dot are refused (`dotfiles: "deny"`): the built screen has
+none, and a stray `.env` or `.DS_Store` in that folder would have been
+handed to anyone who asked. And an address that cannot be read at all (a
+broken percent-code) now gets the core's own plain refusal with the usual
+headers; before, the framework answered in its own words and repeated the
+address.
+
+**The tests.** 13 new ones, in `apps/core/test/static.test.ts`. They talk
+to a real listening server over a plain socket, because a test client that
+takes an address tidies it up first (`/a/../b` becomes `/b`), and an
+attacker's does not.
+
+| What | Where it is tested |
+|---|---|
+| The screen's files need no login, and any other address shows the screen | "are served without a login, and any other address shows the screen" |
+| Climbing out of the folder: `..` plain, encoded and encoded twice; encoded and doubled separators; backslashes; a null byte; the file's own full path, also with a drive letter (46 spellings) | "never include a file from outside the screen's folder, however the address is spelled" |
+| Addresses not in their plain form (`/assets//app.js`, `/assets/x/../app.js`), and other names a file system has for the same file (letter case, a trailing dot or space) | "are found under their plain address only" |
+| The installed package has the fixes | "are served by a version of the file server that has the published fixes" |
+| Dot-named files | "do not include files whose name starts with a dot" |
+| Addresses that cannot be read | "answer an address that cannot be read with a plain refusal, not with the framework's own words" |
+| Past the login by spelling: 8 spellings the router reads as a protected route, and 33 others | "every spelling the router reads as a protected route asks for the login"; "no other spelling of a protected address gives anything away either" |
+| A change without a login, or from another site | "no spelling lets a change through without a login, or from another site" |
+| The three routes without a login stay the only ones | "the routes that need no login stay the only ones" |
+| Nothing is served outside `/api` except the screen's files | "everything the core serves outside the API is the screen's files" |
+| The decision itself | "decides by the route the router chose, then by the address as written and as decoded" |
+
+Whether these tests see the faults was tried in a scratch copy of the
+code:
+
+| State of the code | The 13 new tests |
+|---|---|
+| The web access commit as it is: old package, old login check | 10 fail. Among them: the records come back without a login, and a task is created without one |
+| Old package, with the login check as fixed | 2 fail: `/assets//app.js` is served, and the version is too old |
+| The newest commit | all pass |
+
+Each part of the change in `server.ts` was then switched off once, one at
+a time: the check by route, by the text, by the decoded text; the answer
+to an address that only looks like the API; the dot-named files; the plain
+refusal; and two checks that were there before, of where a request comes
+from and of the `Host` header. Each of the 9 made a test fail.
+
+All 201 core tests were also run with Windows' rule imitated (section 9,
+point 18): all passed, and none of 248 deletions had an open file.
+
+Also done by hand on the Mac, with the real core on the scratch data
+folder of the web access trial (port 7127):
+
+- In a browser, the screen and its files loaded and the login still held.
+  A web search through the stand-in search service still ran, from the
+  card "Leaves this machine" to three numbered sources.
+- Without a login, from the command line: `/api/tasks`, `/%61pi/tasks` and
+  `/a%70i/tasks` answered 401, and so did a `POST` to `/%61pi/tasks`.
+  `/.env`, `/assets/../../package.json` and `//api/tasks` answered 403.
+
+**Not done:** anything on Windows. Several of the spellings mean something
+only there: a backslash separates folders, and a trailing dot, a trailing
+space or a data stream names the same file. The tests are written to hold
+on both machines, but only a run on the laptop shows it.
 
 ### Web access: what was tested
 
@@ -698,13 +866,17 @@ laptop session can read it from the log; no exchange has been spoken yet.
     `ai.local.contextTokens` is the first thing to try, memory permitting.
 22. **The search key is an environment variable**, like the cloud key
     (point 10).
-23. **`@fastify/static` has a published advisory.** `npm audit` reports it
-    for the version in use (and two lesser ones in packages it pulls in).
-    It was there before web access and is not caused by it. The core's own
-    login check sits in front of every `/api` route and does not rely on
-    that package; whether the advisory matters here has not been looked
-    into, and the package has not been updated. On 19 November the owner
-    set this aside for a step of its own.
+23. **The fix for the login check has not reached GitHub or the laptop.**
+    The advisories against `@fastify/static` are dealt with, and `npm
+    audit` finds nothing (section 7). Looking into them turned up a fault
+    in the core's own login check: an address spelled with a percent-code,
+    or written out in full, reached every `/api` route without a login.
+    It is fixed in the newest commit on the Mac. The code on `main`, on
+    GitHub and on the laptop still has the fault, and this repository is
+    public. Only a program or a browser on the same machine can use it,
+    because the core answers on `127.0.0.1`. Until the laptop has the fix,
+    the simple protection is not to leave the core running there when it
+    is not in use.
 24. **One layout change outside web access.** The transcript under the
     brain is now cut off at the top of its own area when it is taller than
     that area, instead of running upwards over the screen. Sources under an
@@ -760,8 +932,11 @@ laptop session can read it from the log; no exchange has been spoken yet.
    on paper). Still the owner's to choose: which folder, and whether the
    laptop may hold the key or only a public half that can encrypt but not
    read.
-10. Web access: say when the commit on `feature/web-access` is to be
-    pushed and brought into `main`. Until then the laptop cannot get it.
+10. Say when the two commits on `feature/web-access` are to be pushed and
+    brought into `main`. Until then the laptop has neither web access nor
+    the fix for the login check (section 9, point 23). Should web access
+    have to wait longer, the fix can go first by itself; it was made on
+    top of web access, so that takes a little work.
 11. Web access: which search service, and create its key. Brave Search asks
     for a card at sign-up and says it does not share queries or train on
     them; Tavily needs no card and may use queries to improve its service.
@@ -776,15 +951,20 @@ laptop session can read it from the log; no exchange has been spoken yet.
 In this order. Steps 1 to 5 and 7 need the owner in the room or a decision
 of the owner.
 
-1. **Push web access, when the owner says so.** It is one commit on
-   `feature/web-access` on the Mac; `docs/WEB-ACCESS.md` explains it. With
-   the owner's yes: the audit (section 13), `main` moved forward to it, a
-   normal push. The owner has said not to push, merge or deploy yet.
-2. **Web access on the laptop.** After the push: `git pull`, `npm install`
-   (one new package), `npm run build`, `npm test`. Create a search key, put
-   it in `.env`, and follow section 9 of `docs/LAPTOP-SETUP.md` and the
-   checks W1 to W10 in `docs/WEB-ACCESS.md`, on the test instance on port
-   7127. Write the results into that page's table.
+1. **Push the two commits, when the owner says so.** Web access and the
+   security fix are on `feature/web-access` on the Mac; `docs/WEB-ACCESS.md`
+   and section 7 explain them. With the owner's yes: the audit (section
+   13), `main` moved forward to the branch, a normal push. The owner has
+   said not to push, merge or deploy yet. The fault in the login check is
+   the reason not to leave this long (section 9, point 23).
+2. **On the laptop, after the push:** `git pull`, `npm install` (one new
+   package for web access, and the newer file server with what it pulls
+   in), `npm run build`, `npm test`, `npm audit`. All 201 core tests have
+   to pass there; the 13 for the screen's files and the login check have
+   only run on a Mac (section 7). Then web access: create a search key,
+   put it in `.env`, and follow section 9 of `docs/LAPTOP-SETUP.md` and
+   the checks W1 to W10 in `docs/WEB-ACCESS.md`, on the test instance on
+   port 7127. Write the results into that page's table.
 3. **Windows laptop, acceptance checks of Phase 2**, as far as they are
    still open. Section 8 of the setup plan and
    `docs/PHASE-2-ACCEPTANCE.md`, in that page's order (the owner's
@@ -866,6 +1046,14 @@ updated first; section 11, point 2).
   test that fails when it is switched off (section 7); keep it that way.
 - **No key in the repository.** Search keys and the cloud key live in
   `.env`, which git ignores, on each machine.
+- **The login is decided by the route the router chose, never by the text
+  of an address.** Every route of the core lives under `/api`. A route
+  anywhere else would be public, and a test fails when one appears
+  (`apps/core/test/static.test.ts`). Tests of how an address is read use a
+  plain socket, not a client that tidies the address first.
+- **A package is updated on purpose.** In a commit of its own, after
+  reading what changed, to a version that fits the Fastify in use. Never
+  with `npm audit fix --force`. Run `npm audit` after every install.
 - **A model changes in `models.json`, in a commit.** Never make a check pass
   by editing a hash to match a file that arrived differently.
 
@@ -889,6 +1077,7 @@ npm run build                    # build the screen
 npm start                        # start the core (default port 7117)
 npm test                         # core tests
 npm run typecheck
+npm audit                        # published advisories against the installed packages
 npm run homebase -- status       # also: owner set-password, backups, restore, audit verify, import
 npm run homebase -- web status                  # is web access on, and which search service
 npm run homebase -- web check <words>           # one real search with the key in .env

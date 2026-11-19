@@ -250,6 +250,11 @@ set it up and the checks for the laptop are in
 [WEB-ACCESS.md](WEB-ACCESS.md). It still needs a search key, a run with the
 laptop's model, and a run on Windows.
 
+**On the same branch: a security fix (19 November 2026).** Also committed
+and not pushed. It closes a fault in the login check that the code on
+GitHub and on the laptop still has, which is the reason to push soon. The
+details are in section 7 of the handoff file.
+
 **Before that: the AI and voice stack.** It is merged into `main` and
 pushed (15 November 2026). The brief and what is verified so far are in
 [AI-VOICE-STACK.md](AI-VOICE-STACK.md). Next is the first session on the
@@ -288,7 +293,14 @@ integrated, tested and documented, and the owner says so.
   approvals for what may be sent out, sources on screen, and spoken answers
   without addresses. Committed on its own branch on 19 November 2026, not
   pushed.
-- 188 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
+- A security fix on the same branch, 19 November 2026, not pushed: the
+  package that serves the screen's files was brought to a version with
+  the published fixes (`@fastify/static` 10.1.12; `npm audit` finds
+  nothing), and a fault in the login check was closed. An address spelled
+  with a percent-code, such as `/%61pi/tasks`, had reached the API without
+  a login. The code on GitHub and on the laptop still has that fault
+  until this is pushed.
+- 201 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
 - On the Windows laptop the core tests failed in the HTTP tests: their shared
   folder was removed while its database was still open, which Windows
   refuses. The tests' cleanup was fixed on the Mac and pushed on 16 November

@@ -105,7 +105,8 @@ Use the test instance on port 7127 for the checks.
 
 | Step | Check |
 |---|---|
-| `git pull`, `npm install` (one new package, `parse5`), `npm run build`, `npm test` | All tests pass on Windows |
+| `git pull`, `npm install` (one new package, `parse5`, and a newer `@fastify/static`), `npm run build`, `npm test` | All tests pass on Windows. The tests in `static.test.ts` have only run on a Mac: if one fails, write down which address it names |
+| `npm audit` | Nothing is reported. Anything listed was published after 19 November 2026: write it down |
 | Sign up with Brave Search or Tavily and create an API key. The costs and the differences are in the web access page | A key exists |
 | Put it in `.env` next to `package.json`, as `BRAVE_SEARCH_API_KEY=...` or `TAVILY_API_KEY=...` | `git status` does not list `.env` |
 | `npm run homebase -- web status` | The search service is named |

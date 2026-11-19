@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import fastifyStatic from "@fastify/static";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { Helios } from "../ai/helios.ts";
 import { StandInProvider } from "../ai/standin.ts";
 import type { ModelProvider } from "../ai/types.ts";
@@ -49,6 +49,29 @@ export const PUBLIC_ROUTES = new Set(["GET /api/health", "GET /api/auth/session"
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+/**
+ * True when a request is for the API, however its address is spelled.
+ *
+ * Which route answers is decided by the router, and the router reads an
+ * address more generously than a comparison of text does: "/%61pi/tasks"
+ * is "/api/tasks" to it. A check that only looked at the text of the
+ * address let exactly that through, past the login. So the first question
+ * is which route the router chose. The text is asked as well, as written
+ * and decoded, so that an address which only looks like the API and
+ * matches no route is treated the same. Any one "yes" is enough: being too
+ * careful here costs a 401, and nothing else.
+ */
+export function isApiRequest(request: Pick<FastifyRequest, "url" | "routeOptions">): boolean {
+  if (request.routeOptions.url?.startsWith("/api/")) return true;
+  const path = request.url.split("?")[0] ?? "";
+  if (path.startsWith("/api/")) return true;
+  try {
+    return decodeURIComponent(path).startsWith("/api/");
+  } catch {
+    return false; // not a readable address: the router refuses it before any route is chosen
+  }
+}
+
 const SECURITY_HEADERS: Record<string, string> = {
   // Only load scripts, styles and data from this app itself.
   "Content-Security-Policy":
@@ -66,7 +89,21 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
   const { port } = instance.config.http;
   // forceCloseConnections: the event stream stays open for as long as the
   // screen is showing; shutting down must not wait for it.
-  const app = Fastify({ logger: false, bodyLimit: 1024 * 1024, forceCloseConnections: true });
+  const app = Fastify({
+    logger: false,
+    bodyLimit: 1024 * 1024,
+    forceCloseConnections: true,
+    // An address the router cannot read at all (broken percent-encoding)
+    // reaches no route and no hook. It gets the same plain refusal, with the
+    // same headers, as any other request that could not be read, instead of
+    // the framework's own message, which repeats the address.
+    frameworkErrors: (_error, _request, raw) => {
+      // (Fastify types this reply for a route that does not exist yet; it is an ordinary one.)
+      const reply = raw as unknown as FastifyReply;
+      for (const [name, value] of Object.entries(SECURITY_HEADERS)) reply.header(name, value);
+      reply.code(400).send({ error: "That request could not be read." });
+    },
+  });
   const bus = new EventBus();
   // Web access reads its settings each time it is used, so the switch on screen takes effect at once.
   const web = context.web ?? new WebAccess({ settings: () => instance.config.web });
@@ -90,7 +127,7 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
     if (!allowedHosts.has(host)) return reply.code(421).send({ error: "This address is not served here." });
 
     const path = request.url.split("?")[0] ?? "";
-    if (!path.startsWith("/api/")) return;
+    if (!isApiRequest(request)) return;
     reply.header("Cache-Control", "no-store");
 
     // 2. Session check, on the server, on every request. Hiding a button in
@@ -138,11 +175,15 @@ export async function buildServer(context: ServerContext): Promise<{ app: Fastif
 
   const webDir = context.webDir && existsSync(context.webDir) ? context.webDir : null;
   // Files are looked up on each request, so a rebuilt screen is served
-  // without restarting the core.
-  if (webDir) await app.register(fastifyStatic, { root: webDir });
+  // without restarting the core. Everything in this folder is public: it is
+  // served without a login, because the login page itself comes from it.
+  // Names that start with a dot are refused all the same. The screen has
+  // none, and a stray one (a ".DS_Store", an ".env" left by a tool) is never
+  // meant for a browser.
+  if (webDir) await app.register(fastifyStatic, { root: webDir, dotfiles: "deny" });
 
   app.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith("/api/")) return reply.code(404).send({ error: "There is nothing at this address." });
+    if (isApiRequest(request)) return reply.code(404).send({ error: "There is nothing at this address." });
     // The screen is a single-page app: every other address shows it, and it
     // decides what to draw.
     if (webDir && request.method === "GET") return reply.sendFile("index.html");

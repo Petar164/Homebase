@@ -25,6 +25,15 @@ the laptop. This document says who may do what, and how that is enforced.
 - Failed logins are rate-limited and the account locks briefly after
   repeated failures.
 - Every request that changes anything must come from the app's own origin.
+- Which requests need the login is decided by the route that answers, not
+  by how the address is spelled: `/%61pi/tasks` is the same route as
+  `/api/tasks` and gets the same check. Three routes answer without a
+  login: the health check, the question whether a session exists, and the
+  login itself.
+- The screen's own files (the page, its script and its styles) are served
+  without a login, because the login page is one of them. Only files in
+  that one folder are served, only under their plain address, and never a
+  file whose name starts with a dot.
 - The core listens on `127.0.0.1` only. Reaching it from a phone will go
   through a private network (planned), never an open port.
 
