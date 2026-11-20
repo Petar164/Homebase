@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Helios } from "../src/ai/helios.ts";
 import { StandInProvider } from "../src/ai/standin.ts";
-import type { ChatRequest, ChatResponse, ModelProvider } from "../src/ai/types.ts";
+import { type ChatRequest, type ChatResponse, type ModelProvider, ProviderError } from "../src/ai/types.ts";
 import { EventBus } from "../src/events.ts";
 import { buildServer } from "../src/http/server.ts";
 import { openInstance } from "../src/instance.ts";
@@ -355,5 +355,95 @@ describe("the voice routes", () => {
     expect(workers[0]?.alive).toBe(false); // the worker is stopped with the core
     expect(voice).not.toBeNull();
     instance.close();
+  });
+});
+
+describe("asking for Claude by voice", () => {
+  /** A cloud model that exists only in the test. It counts how often it was asked. */
+  class SpokenClaude implements ModelProvider {
+    readonly id = "claude-strong";
+    readonly role = "strong" as const;
+    readonly location = "cloud" as const;
+    readonly model = "cloud-model";
+    asked = 0;
+    failWith: Error | null = null;
+    async available() {
+      return true;
+    }
+    async chat(request: ChatRequest): Promise<ChatResponse> {
+      this.asked++;
+      if (this.failWith) throw this.failWith;
+      request.onText?.("Claude says two things are due. ");
+      return { text: "Claude says two things are due.", toolCalls: [], stop: "end", usage: { inputTokens: 1, outputTokens: 1 }, model: this.model };
+    }
+  }
+  const localVoice = () => new StreamingProvider(["The local model ", "says one thing is due."]);
+
+  it("uses Claude for a spoken request that asks for it, and for no other", async () => {
+    const claude = new SpokenClaude();
+    const { instance, worker, answered } = await setup([localVoice(), claude]);
+    instance.config.ai.cloud.allowed = true;
+
+    worker().emit(heard("Helios, ask Claude what is due this week."));
+    await answered();
+    expect(claude.asked).toBe(1);
+    expect(worker().spoken()).toEqual(["Claude says two things are due."]);
+
+    // A mention in passing, and then an ordinary follow-up in the same spoken conversation: both stay on this machine.
+    for (const said of ["I was talking about Claude yesterday. What is due this week?", "And what is late?"]) {
+      worker().sent.length = 0;
+      worker().emit(heard(said));
+      await answered();
+      expect(worker().spoken(), said).toEqual(["The local model says one thing is due."]);
+    }
+    expect(claude.asked).toBe(1);
+  });
+
+  it("says that Claude is switched off before the local model's answer, and says it once", async () => {
+    const claude = new SpokenClaude();
+    const { worker, answered } = await setup([localVoice(), claude]); // cloud models are off
+    worker().emit(heard("Use Claude for this question. What is due this week?"));
+    await answered();
+    expect(claude.asked).toBe(0);
+    expect(worker().spoken()).toEqual([
+      "Claude is switched off on this machine, so it was not asked.",
+      "You can turn cloud models on from the main screen.",
+      "The answer below is from the model on this machine.",
+      "The local model says one thing is due.",
+    ]);
+  });
+
+  it("says that a spoken request which did not come first was not taken as one, before the local model's answer", async () => {
+    const claude = new SpokenClaude();
+    const { instance, worker, answered } = await setup([localVoice(), claude]);
+    instance.config.ai.cloud.allowed = true;
+
+    // The question first and the request after it: only the beginning of what was said can ask for Claude.
+    worker().emit(heard("What is due this week? Ask Claude."));
+    await answered();
+    expect(claude.asked).toBe(0);
+    expect(worker().spoken()).toEqual([
+      "I did not take that as a request for Claude, so the answer below is from this machine.",
+      'To ask Claude, begin your message with "Ask Claude".',
+      "The local model says one thing is due.",
+    ]);
+  });
+
+  it("says that Claude failed, and that the answer is not Claude's, before the local model's answer", async () => {
+    const claude = new SpokenClaude();
+    claude.failWith = new ProviderError("network", "Anthropic could not be reached. Check the internet connection.");
+    const { instance, worker, answered } = await setup([localVoice(), claude]);
+    instance.config.ai.cloud.allowed = true;
+
+    worker().emit(heard("Ask Claude what is due this week."));
+    await answered();
+    expect(claude.asked).toBe(1);
+    expect(worker().spoken()).toEqual([
+      "cloud-model could not answer.",
+      "Anthropic could not be reached.",
+      "Check the internet connection.",
+      "The answer below is from the model on this machine, not from Claude.",
+      "The local model says one thing is due.",
+    ]);
   });
 });

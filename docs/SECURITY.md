@@ -73,12 +73,31 @@ question. A grant says: *this* workflow or agent may use *these* tools on
 
 ## Cloud policy: approval
 
-Cloud models are off until the owner switches them on, which needs the
-password again. Switching them off needs nothing. A key in the `.env` file
-does not switch anything on, and neither does a value an earlier version
-left in the settings file. What is sent once they are on, what it costs
-and what happens when the service fails is in
-[CLAUDE-API.md](CLAUDE-API.md).
+HELIOS is local first: the model on this machine answers. A cloud model
+answers only a message in which the owner asked for it by name, with the
+screen's "Ask Claude" or by beginning the message with a command such as
+"Ask Claude to ...". That is decided by a fixed list of command forms, not
+by a model, and it holds for that one message. Nothing else leads to the
+cloud: not the length or difficulty of a question, not a failing local
+model, not a setting.
+
+Only the beginning of a message is read for the command. Words later in
+it cannot ask for Claude: not a refusal ("don't, under any circumstances,
+ask Claude"), not what somebody else said, and not text that was pasted
+in or came from the web. When such words are there and the message is not
+a request, HELIOS says so before the answer, so that a local answer is
+not taken for Claude's. A yes to a card never widens this: a turn that
+goes on after a card keeps its request for Claude only while it is still
+the owner's latest question.
+
+Asking is one condition and the switch is another. Cloud models are off
+until the owner switches them on, which needs the password again.
+Switching them off needs nothing. A key in the `.env` file does not switch
+anything on, and neither does a value an earlier version left in the
+settings file. Asking for Claude while they are off sends nothing and
+switches nothing on: HELIOS says that Claude is off, and the local model
+answers. What is sent when Claude is asked for, what it costs and what
+happens when the service fails is in [CLAUDE-API.md](CLAUDE-API.md).
 
 Everything stored has a sensitivity label: `normal`, `private`, `sensitive`
 or `secret`.

@@ -105,10 +105,11 @@ without touching the core.
    changes.
 3. The orchestrator asks memory for relevant context, and builds a prompt.
    Every piece of context carries a sensitivity label.
-4. The router picks a model by fixed rules. Routine questions go to the
-   local model. Hard ones go to the cloud model, but only if cloud use is on,
-   the month's budget has room, and nothing in the context is labelled
-   sensitive, or the owner approves that specific request.
+4. The router picks a model by a fixed rule. The model on this machine
+   answers. The cloud model answers only a message in which the owner
+   asked for it by name, and then only if cloud use is on, the month's
+   budget has room, and nothing in the context is labelled sensitive, or
+   the owner approves that specific request.
 5. The model answers with text and, if needed, tool requests. Each request is
    checked against its schema, its risk tier and the current grants. Reading
    tasks is tier 0 and runs at once.
@@ -126,8 +127,8 @@ part of the system depends on one vendor.
 | Role | Model | Notes |
 |---|---|---|
 | Local reasoning, the default | `qwen3.5:4b` through Ollama | Ordinary conversation and Home Base questions. Runs on the GPU |
-| Cloud, hard reasoning | `claude-sonnet-5-5` through the official SDK | Long or analytical requests, or when asked. Optional: off until the owner switches cloud models on ([CLAUDE-API.md](CLAUDE-API.md)). Billed per use, separately from any Claude subscription |
-| Cloud, light work | `claude-haiku-5-5` | Extraction, classification, summaries, background passes |
+| Cloud, on request | `claude-sonnet-5-5` through the official SDK | Only for a message in which the owner asks for Claude. Never chosen by HELIOS itself. Off until the owner switches cloud models on ([CLAUDE-API.md](CLAUDE-API.md)). Billed per use, separately from any Claude subscription |
+| Cloud, light | `claude-haiku-5-5` | Set up, and used by the `cloud check` command only. No conversation and no background work uses it |
 | Local embeddings (phase 3) | A small embedding model through Ollama | Memory search never needs the cloud |
 | Stand-in | Fixed rules | Answers only while no real model is connected |
 | Tests | A scripted model | The whole pipeline is testable without a key or a GPU |

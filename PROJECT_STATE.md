@@ -5,16 +5,16 @@ session needs to continue without the earlier conversation. Rewrite it at the
 end of every session. `docs/ROADMAP.md` holds the plan; this file holds where
 the work actually is.
 
-**Last updated:** 19 November 2026
+**Last updated:** 20 November 2026
 
 ## 1. Snapshot
 
 | | |
 |---|---|
-| Current work | Claude as an optional cloud model (Phase 2.6), a first version: built and tested on the Mac on 19 November 2026 with stand-ins, committed on its own branch, not pushed. It waits for the owner's word, for an API key, and for a first real request. Before it, the same day: web access (Phase 2.5) and a security fix, both on `main` and pushed. They wait for the laptop to pull them, and web access for a search key |
-| State | The AI and voice stack, the preparation for the acceptance checks and the fix for the Windows test failure are on `main` and pushed. The laptop added one commit on 17 November (`a3e834a`, "Integrate GPT-OSS 20B and improve voice diagnostics"). Web access (`5b2ade0`) and the security fix (`c553742`) were built on top of that on the Mac, and pushed on 19 November 2026 on the owner's yes: `main` is at `c553742`. **The laptop still runs the code from before them, with the fault in the login check, until it pulls** (section 9, point 23). The Claude work is one commit on top of `main`, on the Mac only, **not pushed and not on `main`**: the owner said not to push or merge it. What the laptop has run is known on the Mac only from what the owner said (below) |
-| Branch | `feature/claude-api`, made from `main` at `c553742` and one commit ahead of it, on the Mac only. Nothing is uncommitted. `main` is the same as `origin/main`. Four older branches exist on the Mac only and hold nothing more: `feature/web-access`, `feature/ai-voice-stack`, `laptop-acceptance`, `fix/http-test-cleanup` |
-| Tests | 230 of 230 in the core (108 before, 80 for web access, 13 for the screen's files and the login check, 29 for Claude), 75 of 75 in the voice worker, type check clean, the screen builds, `npm audit` finds nothing, all on the Mac |
+| Current work | Claude as an optional cloud model, in two steps on the Mac, with stand-ins: Phase 2.6 (19 November 2026), and Phase 2.6.1 (20 November 2026), which carries out the owner's routing decision: **HELIOS is local first, and Claude answers only a message that asks for it.** Two commits on two branches, not pushed. They wait for the owner's word, for an API key, and for a first real request. Before them: web access (Phase 2.5) and a security fix, both on `main` and pushed. They wait for the laptop to pull them, and web access for a search key |
+| State | The AI and voice stack, the preparation for the acceptance checks and the fix for the Windows test failure are on `main` and pushed. The laptop added one commit on 17 November (`a3e834a`, "Integrate GPT-OSS 20B and improve voice diagnostics"). Web access (`5b2ade0`) and the security fix (`c553742`) were built on top of that on the Mac, and pushed on 19 November 2026 on the owner's yes: `main` is at `c553742`. **The laptop still runs the code from before them, with the fault in the login check, until it pulls** (section 9, point 23). The Claude work is two commits on top of `main`, on the Mac only, **not pushed and not on `main`**: the owner said not to push or merge them. What the laptop has run is known on the Mac only from what the owner said (below) |
+| Branch | `feature/claude-explicit-only`, made from `feature/claude-api` (`38506fe`) and one commit ahead of it. `feature/claude-api` is one commit ahead of `main` (`c553742`). Both on the Mac only. Nothing is uncommitted. `main` is the same as `origin/main`. Four older branches exist on the Mac only and hold nothing more: `feature/web-access`, `feature/ai-voice-stack`, `laptop-acceptance`, `fix/http-test-cleanup` |
+| Tests | 261 of 261 in the core (108 before, 80 for web access, 13 for the screen's files and the login check, 29 for Claude, 32 for "Claude only when asked"; one test of the earlier routing was removed), 75 of 75 in the voice worker, type check clean, the screen builds, `npm audit` finds nothing, all on the Mac |
 | Next phase | Phase 3 (memory and second brain). **Do not start it until the owner explicitly authorises it** |
 
 Not verified anywhere: a real microphone and speakers (as far as the Mac
@@ -110,6 +110,41 @@ pushing both commits, and `main` was moved forward to `c553742` and pushed.
   the Official Style Guide PDF (no such file is in this repository).
 - A coherent, tested piece of work comes before trying to do everything.
   Commit only what is finished and checked, on `feature/claude-api`.
+
+What was done is in section 7.
+
+### The owner's routing decision (20 November 2026)
+
+After Phase 2.6 the owner was asked whether Claude, once switched on,
+should take hard questions by itself or only when asked. The answer went
+further, and is final:
+
+- **GPT-OSS 20B is HELIOS's default local intelligence. Claude may be used
+  only when the owner explicitly asks for Claude, for that interaction.**
+  Switching cloud access on does not authorise HELIOS to choose Claude.
+- Ordinary requests always go to the local model. Length, difficulty,
+  uncertainty or a model's confidence never bring Claude in.
+- The request holds for the interaction it was made for. Afterwards
+  ordinary requests are local again, and a continuation does not inherit
+  it.
+- Typed instructions such as "Ask Claude to analyze this" and "Use Claude
+  for this question" count. By voice, a request is told apart from a
+  mention. A fixed rule that can be audited decides, not a model's reading
+  alone. A control on the screen follows the same rules.
+- Nothing of Phase 2.6 is weakened: off by default, old settings do not
+  switch it on, only `ANTHROPIC_API_KEY`, the password and the approval
+  for sensitive data, the monthly budget, the egress log, typed errors, a
+  truthful local fallback. Asking for Claude does not get past an
+  approval and does not switch cloud access on.
+- If Claude fails and the local model answers, that is said plainly. A
+  local answer is never presented as Claude's.
+- Keep the changes to the screen small. Do not change the strong cloud
+  model, the €20 budget or unrelated settings.
+- Work on a follow-up branch made from `feature/claude-api`. **Do not
+  push, merge, deploy, switch real cloud access on, ask for an API key or
+  send any request to Anthropic.**
+- Also said: do not make a commit only to record the earlier push in the
+  documents, and do not ask about that again.
 
 What was done is in section 7.
 
@@ -219,8 +254,8 @@ Full detail, measurements and sources: `docs/AI-VOICE-STACK.md`.
 |---|---|---|---|
 | Local model | `qwen3.5:4b`, 8K context (the default in the code) | Ollama 0.19 or newer | Ran through the whole HELIOS loop with tools. **Not installed right now**, see section 9 |
 | Local model on the laptop | `gpt-oss:20b`, medium reasoning, 4,096 tokens of context (set in that machine's `config.json`; `think` may now be `low`, `medium` or `high`) | Ollama on the laptop | Never run on the Mac. Stated by the owner on 18 November 2026 |
-| Hard reasoning | `claude-sonnet-5-5` | Anthropic SDK | Written, tested against a fake. Never called for real |
-| Light and background | `claude-haiku-5-5` | Anthropic SDK | Same |
+| Claude, only for a message that asks for it | `claude-sonnet-5-5` | Anthropic SDK | Written, tested against a fake. Never called for real |
+| The test question of `cloud check`; no conversation uses it | `claude-haiku-5-5` | Anthropic SDK | Same |
 | Stand-in | Rule-based, no model | In the core | Works. Answers when nothing else is available |
 | Speech to text | NVIDIA Parakeet Unified English 0.6B, int8 | sherpa-onnx 2.0.1, CPU | Works on recorded audio |
 | Speech to text, fallback | Parakeet TDT 0.6B v2, int8 | same | Works. Loaded automatically when Unified fails |
@@ -232,10 +267,11 @@ Full detail, measurements and sources: `docs/AI-VOICE-STACK.md`.
 
 Code: `apps/core/src/ai/policy.ts` and `apps/core/src/ai/helios.ts`.
 
-- Routing is by fixed rules, not by a model. Ordinary requests go to the
-  local model. Long or analytical requests (`routing.complexChars`, 600) or
-  "think hard" go to Sonnet. Background work goes to Haiku. The owner can
-  override per message.
+- Routing is by a fixed rule, not by a model. The model on this machine
+  answers. Claude answers only a message in which the owner asks for it
+  ("Claude as a cloud model", below). Until 20 November 2026 long or
+  analytical requests and "think hard" went to Sonnet by themselves; that
+  is gone.
 - Every answer stores which model wrote it and why (`messages.route_reason`).
   The screen shows it, and HELIOS can say it when asked.
 - Sensitive content needs the owner's approval before it goes to a cloud
@@ -246,9 +282,11 @@ Code: `apps/core/src/ai/policy.ts` and `apps/core/src/ai/helios.ts`.
   counted as euros one to one, plus 21 percent. The worst-case cost is
   reserved before each cloud call (`cloud_reservations`) and replaced by the
   real cost afterwards. At the cap the local model answers and says why.
-- When a model fails, the next allowed one answers within the same turn.
-- The cloud switch is on by default, but a Claude provider only counts as
-  available when `ANTHROPIC_API_KEY` is set in the environment.
+- When Claude fails, the local model answers within the same turn, after
+  HELIOS has said so. When the local model fails, nothing takes its place.
+- The cloud switch is off until the owner turns it on (`ai.cloud.allowed`),
+  and a Claude provider only counts as available when `ANTHROPIC_API_KEY`
+  is set in the environment.
 
 ### Voice design
 
@@ -359,9 +397,34 @@ Full description: `docs/CLAUDE-API.md`. Code: `apps/core/src/ai/claude.ts`
 (the provider), `apps/core/src/ai/policy.ts` (rules and budget), the turn
 loop in `apps/core/src/ai/helios.ts`.
 
-- Optional. The local model stays the default; on the laptop that is
-  `gpt-oss:20b`, set in that machine's `config.json` (the default in the
-  code is still `qwen3.5:4b` and was not changed).
+- **Local first.** The model on this machine answers; on the laptop that
+  is `gpt-oss:20b`, set in that machine's `config.json` (the default in
+  the code is still `qwen3.5:4b` and was not changed). A cloud model is
+  looked at only for a message in which the owner asked for Claude
+  (`chooseProvider` in `apps/core/src/ai/policy.ts`): never for a long or
+  hard question, a missing or failing local model, or background work.
+- Asking is the screen's "Ask Claude" (`claude: true` sent with the
+  message) or a command that names Claude at the beginning of the
+  message, typed or spoken (`claudeRequestIn`: a fixed list of forms, and
+  no model is asked). Nothing later in a message is read for it. The
+  request is written on the owner's message (`messages.content`, field
+  `claude`), holds for that message, and is in the audit log as
+  `cloud.requested`.
+- A message that holds such a command without beginning with it is not a
+  request, and HELIOS says so before the answer
+  (`namesClaudeInACommand`).
+- The settings `ai.prefer` and `ai.routing` are gone. A file that still
+  holds them changes nothing. The light model is used by `cloud check`
+  only.
+- When Claude was asked for and another model answers, the route carries
+  a sentence that is written into the conversation and handed to the
+  voice (a `notice` event) before the answer. The screen shows "Claude is
+  answering" from an `answering` event.
+- A card that asks whether a conversation may go to Claude is closed by
+  the owner's next message. Every card records the question it was raised
+  for (`turnSeq` in its stored action), and a turn that goes on after a
+  card (`run`, with `heldTurn`) keeps its request for Claude only while
+  that is still the latest question.
 - Off until the owner switches it on: `ai.cloud.allowed`, set by the
   switch on the main screen (`PUT /api/ai/cloud`, the password again to
   turn on). The older name `ai.cloud.enabled` is no longer read, because
@@ -426,19 +489,21 @@ confirmed (section 1).
 is one line, without merge commits. Every push from the Mac was a normal
 one, made after the audit in section 13 and on the owner's yes.
 
-**One commit is not on `main` and not pushed.** It is on the branch
-`feature/claude-api` (made from `c553742`), on the Mac only, made on 19
-November 2026: Claude as an optional cloud model (section 7). This file is
-part of it, so its number is not written here; `git log -1
-feature/claude-api` shows it. It holds 23 files: changes to the provider,
-the rules and budget, the turn loop, the settings, the routes, the command
-line, the screen and the shared types; one new test file
-(`apps/core/test/cloud.test.ts`); one new document (`docs/CLAUDE-API.md`);
-and changes to one existing test file, the key template and eight
-documents. No new package and no change to `package-lock.json`. Nothing
-under `.claude`, `private`, `home-base` or `repos` is part of it, and no
-`.env` file exists. With the owner's yes it reaches the laptop the usual
-way: the audit, `main` moved forward to the branch, a normal push.
+**Two commits are not on `main` and not pushed**, each on a branch of its
+own, on the Mac only. This file is part of the newer one, so that one's
+number is not written here; `git log -1 feature/claude-explicit-only`
+shows it.
+
+| Commit | Branch | What |
+|---|---|---|
+| `38506fe` | `feature/claude-api`, made from `c553742` | feat: harden Claude API integration and make it opt-in. Phase 2.6, 19 November 2026, 23 files: the provider, the rules and budget, the turn loop, the settings, the routes, the command line, the screen, the shared types, the new test file `apps/core/test/cloud.test.ts`, the new document `docs/CLAUDE-API.md` |
+| the newest | `feature/claude-explicit-only`, made from `38506fe` | Phase 2.6.1, 20 November 2026: Claude only when asked. 25 files: the rules, the turn loop, the settings, the message route, the command line, the start-up messages, two lines of the voice service, a comment in the provider types, the screen, the shared types, the new test file `apps/core/test/local-first.test.ts`, three existing test files, the key template and nine documents |
+
+No new package and no change to `package-lock.json` in either. Nothing
+under `.claude`, `private`, `home-base` or `repos` is part of them, and no
+`.env` file exists. With the owner's yes they reach the laptop the usual
+way: the audit, `main` moved forward, a normal push. The second was made
+on top of the first, so they go together, or the first alone.
 
 The four newest commits on `main`:
 
@@ -484,15 +549,181 @@ Before these, `main` held 15 commits, up to `46a8d33`.
 
 ## 7. Tests
 
-Run on 19 November 2026 on the Mac, on what the newest commit holds:
+Run on 20 November 2026 on the Mac, on what the newest commit holds:
 
 | Command | Result |
 |---|---|
-| `npm test` | 230 passed, 0 failed (12 files) |
+| `npm test` | 261 passed, 0 failed (13 files) |
 | `npm run typecheck` | clean |
 | `npm run build` | the screen builds |
 | `cd apps/voice && uv run pytest` | 75 passed, 0 failed |
 | `npm audit` | found 0 vulnerabilities |
+
+### Claude only when asked: what was found, changed and tested
+
+This is Phase 2.6.1, the owner's routing decision of 20 November 2026
+(section 1).
+
+**How Claude could be chosen before**, once cloud models were switched on
+and a key was present:
+
+| Way | What it did |
+|---|---|
+| Length or wording | A message over 600 characters, or one with words such as "compare", "analyse", "strategy", went to the strong cloud model by itself |
+| A setting | `ai.prefer: "cloud"` sent ordinary messages to the light cloud model |
+| No local model | When the local model was not running, or failed in the middle of a turn, a cloud model answered in its place |
+| Background work | Routed to the light cloud model (the rule existed; nothing called it) |
+| "Think hard" | Those words, and the screen's "Think hard" button, selected the strong cloud model. They ask for harder thinking, not for Claude |
+| A late yes | Approving a "send to Claude" card continued with Claude on whatever the latest message was, also an ordinary one typed in between |
+
+**What changed.**
+
+- **One door.** `chooseProvider` looks at a cloud model only when the
+  message asks for Claude. Otherwise it routes exactly as if no cloud
+  model existed. The first four ways are removed, with the two settings
+  behind them (`ai.prefer`, `ai.routing`).
+- **Asking is a fixed list, at the beginning of a message.**
+  `claudeRequestIn` recognises commands that name Claude ("Ask Claude
+  ...", "Use Claude ...", "Let Claude ...", "Send this to Claude", "...
+  using Claude", "I want Claude for this", and a few more), after a
+  greeting or words such as "please" or "can you". It reads typed and
+  spoken text the same way. No model is asked. A request that is not
+  recognised stays on this machine.
+- **Only the beginning is read.** The first version of the rule also
+  looked for a command after a comma or an "and", and in every sentence.
+  Reading it against awkward phrasings showed that it then took "Don't,
+  under any circumstances, ask Claude", "I could just, you know, ask
+  Claude", "He said, ask Claude", a pasted email with "Ask Claude to
+  draft the report" in it and an article ending in "Try Claude today" for
+  requests, and "Use Claude's API key" as well. Now nothing after the
+  beginning of a message can ask for Claude, and what belongs to the
+  service ("Claude's API key", "Claude Code") or is a person ("Claude
+  Shannon") is not the name. A mention, a question about Claude, "should
+  I ask Claude?", "don't ask Claude", "the cloud model" and "think hard"
+  are not requests either.
+- **When the words come close, HELIOS says so.** A message that holds
+  such a command without beginning with it ("What is the best plan? Ask
+  Claude.") is answered on this machine, and before the answer HELIOS
+  says, on screen and by voice: "I did not take that as a request for
+  Claude, so the answer below is from this machine. To ask Claude, begin
+  your message with "Ask Claude"." (`namesClaudeInACommand`). A plain
+  mention gets no remark.
+- **The screen's "Think hard" is now "Ask Claude"**, and sends `claude:
+  true` with that one message. An older screen's `reasoning: "strong"` is
+  dropped.
+- **The request is written on the owner's message** and nowhere else. A
+  turn that goes on after an approval reads it there. The next message
+  starts without it.
+- **A card about an earlier question is closed by the next message**, and
+  a yes that still arrives for it sends nothing.
+- **Every card remembers the question it was raised for** (`turnSeq` in
+  its stored action). Found on the last reading of the code: a web
+  request that waited for a yes continued, once approved, with whatever
+  the owner's latest message asked for. A card of an ordinary question,
+  approved after a later message that asked for Claude, would have
+  brought Claude in. Now a turn that goes on after a card keeps its
+  request for Claude only while it is still the latest question.
+  Otherwise the approved request still runs, the model on this machine
+  reads the result, and if the earlier question had asked for Claude,
+  HELIOS says that Claude is not asked again. A card written by an
+  earlier version is read on this machine.
+- **A no to sending sensitive content** now says how to get an answer:
+  "Not sent: nothing more went to Claude. Ask again without asking for
+  Claude, and the model on this machine answers." The earlier remark
+  advised setting up a local model.
+- **Truthful fallback.** When Claude was asked for and may not be used
+  (switched off, no key, budget used up, something secret) or fails,
+  HELIOS says so before the answer, on screen and by voice, and the answer
+  carries the name of the model that wrote it. Asking for Claude while it
+  is off switches nothing on.
+- **A failing local model is no longer replaced by a cloud model.** HELIOS
+  says that the model did not answer.
+- **On screen:** "Claude off", "Claude on · only when you ask", the mark
+  "asked Claude" on the owner's message, "Claude is answering" with the
+  model's name while it is, and the model and reason under every answer.
+  Three things the trial in a browser turned up were put right: with the
+  transcript hidden, the remark that Claude is not answering is now shown
+  together with the answer it belongs to; the "Model" line names the
+  model on this machine only, since Claude has its own line; and the line
+  with a model's name stands only under the answer that model wrote.
+  "Ask Claude" on the screen is for the next typed message: it goes off
+  when the talk button is held, so that it cannot stay lit across a
+  spoken message and be used by something typed later. That last point
+  was type-checked and built, not tried in a browser: the demo runs
+  without voice.
+- Nothing of Phase 2.6 was loosened: the switch, the key, the budget, the
+  approval for sensitive content, the egress log and the typed failures
+  are as they were.
+
+**The tests.** 32 new ones: 28 in `apps/core/test/local-first.test.ts`
+and 4 in `apps/core/test/voice.test.ts`. One test of the old routing was
+removed, and the existing tests that relied on it now ask for Claude.
+
+| The owner's scenario | Where it is tested (in `local-first.test.ts` unless named) |
+|---|---|
+| 1, 2. Cloud off or on, an ordinary question: the local model | "keeps an ordinary question on this machine, with cloud models off and with them on" |
+| 3, 4. Cloud on, a difficult or a long question: the local model | "keeps a difficult or a long question on this machine too" |
+| 5. Cloud on, Claude asked for: Claude | "sends a message to Claude when it asks for Claude, in words or with the screen's Ask Claude" |
+| 6. Cloud off, Claude asked for: nothing sent | "sends nothing when Claude is asked for while cloud models are off, says so first, and leaves the switch alone" |
+| 7. A mention of Claude: the local model | "does not take a mention of Claude for a request"; "the words that ask for Claude" (four tests, 103 phrases: 33 that ask, 45 that do not, 13 that hold a command after the beginning, 6 plain mentions and 11 as a speech recogniser writes them, a few of them twice) |
+| 8. Claude asked for, sensitive context: the approval holds | "still asks before sensitive records go to Claude" |
+| 9. Claude asked for, budget used up: no call | "makes no call when the month's budget is used up" |
+| 10. Claude fails: a truthful local answer | "lets the local model answer under its own name when Claude fails, and says so before the answer" |
+| 11. The next question: the local model | "treats the next message as an ordinary one again" |
+| 12. Older settings cannot bring automatic routing back | "cannot be set back to choosing by itself: not by an older settings file, not by an older screen" |
+| 13. A failure does not get a later write past the approval | "makes a later change wait for the owner after a model failed" |
+| 14. An approval is not reused | "does not let an approval be used twice, or a repeated request ride on it" |
+| 15. Looking at the status makes no call | "makes no request when its status is looked at" |
+| Words that come close | "says so, before the answer, when a message holds words like 'ask Claude' without beginning with them" |
+| Where a question ends | "where one question ends and the next begins" (eight tests: a card closed by the next message, a late yes, a second message while Claude answers, a held turn going on, a web search of Claude's going on with Claude, a card of an ordinary question answered after a message that asked for Claude, a card of a question the owner has left, a card of an earlier version) |
+| No other entry point | "no other way to a cloud model" (the router tried with every combination of circumstances, 5,120 in all; a message with anything else handed in) |
+| By voice | `voice.test.ts`, "asking for Claude by voice" (four tests: a spoken request and a spoken mention, the remark that Claude is off spoken before the local answer and once, a request that did not come first, a failed Claude) |
+
+Each protection was then switched off once, one at a time: the 44 of this
+step, among them the old rules put back and the looser ways of reading a
+request, and the 37 of Phase 2.6 again, three of them in the place their
+code had moved to. Each of the 81 made a test fail.
+
+All 261 core tests were also run with Windows' rule imitated (section 9,
+point 18): all passed, and none of 338 deletions had an open file.
+
+Also done by hand on the Mac, with the real core on the scratch data
+folder (port 7127), no local model, and a stand-in for Anthropic's service
+on the Mac itself (a placeholder key and a local address, so nothing went
+to Anthropic):
+
+- Claude off: the screen showed "Claude off". "Ask Claude what is due this
+  week." gave the remark that Claude is switched off, then the answer of
+  the fixed rules, with "you asked for Claude, but cloud models are
+  switched off" under it.
+- Claude on, after the password: "Claude on · only when you ask". A
+  question with "analyse in depth", "step by step" and "think hard" in it
+  was answered on the machine, and the stand-in service received nothing.
+- "Ask Claude" pressed: the message box said "This one message goes to
+  Claude", the screen showed "Claude is answering · claude-sonnet-5-5"
+  while the service worked, and the answer carried "claude-sonnet-5-5 ·
+  you asked for Claude". The service had received exactly one request.
+  The next message, an ordinary one, was answered on the machine.
+- With the service stopped: "claude-sonnet-5-5 could not answer. Anthropic
+  could not be reached. Check the internet connection." Nothing was shown
+  as Claude's answer.
+- The demo's settings file had been written by the earlier version. After
+  the switch was used, `prefer` and `routing` were gone from it.
+- That trial was made before the rule was tightened to the beginning of a
+  message. Every request in it begins with the command, which the rule
+  reads as before. Afterwards, on the final code and with Claude off:
+  "What is due this week? Ask Claude." gave "I did not take that as a
+  request for Claude, so the answer below is from this machine. ..." and
+  then the answer of the fixed rules, with no mark on the message. "Ask
+  Claude what is due this week." gave the mark "asked Claude", the remark
+  that Claude is switched off, and the answer.
+
+**Not done:** a real request to Anthropic; a spoken request through a real
+microphone and the real speech recogniser; anything on Windows; the card
+of a web request answered late, in a browser (tests only). Cancelling a
+running answer is not tested because there is no such control; that a
+request which the provider reports as stopped leaves no "could not answer"
+remark is tested.
 
 ### Claude as a cloud model: what was found, changed and tested
 
@@ -923,7 +1154,7 @@ laptop session can read it from the log; no exchange has been spoken yet.
    are tested against a stand-in for the SDK's client, and with the real
    SDK against a stand-in service on the Mac. Whether Anthropic accepts
    each field of the request is not known. `cloud check` is meant to be the
-   first real request (`docs/CLAUDE-API.md`, checks C1 to C8).
+   first real request (`docs/CLAUDE-API.md`, checks C1 to C12).
 3. **The local model is not installed on the Mac right now.** The installed
    Ollama (0.18.3, checked again this session) is too old for `qwen3.5:4b`,
    which needs 0.19 or newer. The test used the current release run
@@ -1034,6 +1265,32 @@ laptop session can read it from the log; no exchange has been spoken yet.
 28. **`cloud check` is not counted in the monthly total.** It does not
     open the database, so that it works while the core runs. It shows what
     its one request cost instead.
+29. **A spoken "Ask Claude" has not met a real speech recogniser.** The
+    rule reads what the recogniser writes. If the name comes out as
+    "cloud", the request is not recognised and the local model answers:
+    the safe side. A few spellings by ear ("claud", "klaud") are accepted.
+    What Parakeet really writes is check C11 in `docs/CLAUDE-API.md`.
+30. **The list of command forms is short on purpose, and only the
+    beginning of a message is read.** A request phrased another way, or
+    placed after other words ("What is the best plan? Ask Claude."), stays
+    local, and HELIOS says that it was not taken as a request. If the
+    owner's own way of asking is missing, add the form to `FORMS` in
+    `apps/core/src/ai/policy.ts`, with a line in the tables of the test.
+    Reading more than the beginning is a decision for the owner, not a
+    fix: it is what let pasted text and a refusal count as requests.
+    Two things the rule cannot tell: pasted text that itself opens a
+    message with such a command counts as the owner's words, and "Send
+    this to Claude" is read as the assistant also when the owner knows a
+    person of that name.
+31. **A yes for sensitive content still covers 30 minutes.** After the
+    owner approves sending a conversation's sensitive content, a later
+    message in that conversation that asks for Claude again is not asked
+    a second time about the same content, for 30 minutes. Anything
+    sensitive that comes in afterwards asks again, and in practice every
+    further answer does that. This is as it was before; whether it should
+    be once per request is the owner's to say (section 11, point 15).
+32. **A running answer cannot be cancelled.** Nothing on the screen or by
+    voice stops a model call that is under way; "stop" stops the speaking.
 
 ## 10. Decisions already made
 
@@ -1046,6 +1303,9 @@ laptop session can read it from the log; no exchange has been spoken yet.
 - Half duplex plus an own-voice filter, not echo cancellation.
 - Push-to-talk first. A wake word never authorises anything.
 - Routing by fixed rules with a stored reason, not by a model's judgement.
+- Local first. Claude answers only a message in which the owner asks for
+  it; switching cloud access on allows that and chooses nothing. The
+  owner's decision of 20 November 2026 (section 1), and final.
 - A cautious budget: one dollar counts as one euro, plus 21 percent, with
   reservations before the call.
 - Provisional until the owner decides: non-streaming Parakeet Unified int8,
@@ -1085,8 +1345,9 @@ laptop session can read it from the log; no exchange has been spoken yet.
    on paper). Still the owner's to choose: which folder, and whether the
    laptop may hold the key or only a public half that can encrypt but not
    read.
-10. Say when the commit on `feature/claude-api` is to be pushed and brought
-    into `main`. Until then the laptop cannot get it. Nothing in it is
+10. Say when the two Claude commits (`feature/claude-api`, and on top of
+    it `feature/claude-explicit-only`) are to be pushed and brought into
+    `main`. Until then the laptop cannot get them. Nothing in them is
     needed for web access or for the fix of the login check: those are on
     `main` already.
 11. Web access: which search service, and create its key. Brave Search asks
@@ -1097,14 +1358,22 @@ laptop session can read it from the log; no exchange has been spoken yet.
 12. Web access: whether every request should wait for a yes
     (`web.confirmEvery`). Off by default: only requests that could carry
     something private wait.
-13. Claude: whether to use it at all, and with which settings. The strong
-    model is `claude-sonnet-5-5`; `claude-opus-5-5` is more capable and
-    costs twice as much per token. `ai.prefer` decides whether hard
-    questions go to Claude by themselves (`"auto"`, the default) or only
-    when asked for (`"local"`). The monthly limit is €20.
+13. Claude: whether to use it at all. The routing is decided (20 November
+    2026): only when asked. Left as they were, and still the owner's to
+    confirm: the strong model (`claude-sonnet-5-5`; `claude-opus-5-5` is
+    more capable and costs twice as much per token) and the monthly limit
+    of €20.
 14. Claude: read Anthropic's terms for API customers before switching it
     on. What Anthropic does with what it receives is not something this
     code decides.
+15. Claude: whether a yes for sensitive content should hold for one request
+    only, instead of 30 minutes for the same content (section 9, point
+    31).
+16. Claude: whether a request may also stand at the end of a message
+    ("What is the best plan? Ask Claude."). Now only the beginning counts,
+    and HELIOS says so when the words come later (section 9, point 30).
+    Allowing the end as well would be more convenient by voice, and would
+    let pasted text that ends in such a sentence ask for Claude.
 
 ## 12. Exact next steps
 
@@ -1120,12 +1389,13 @@ of the owner.
    key, put it in `.env`, and follow section 9 of `docs/LAPTOP-SETUP.md`
    and the checks W1 to W10 in `docs/WEB-ACCESS.md`, on the test instance
    on port 7127. Write the results into that page's table.
-2. **Push the Claude commit, when the owner says so.** It is on
-   `feature/claude-api` on the Mac; `docs/CLAUDE-API.md` and section 7
-   explain it. With the owner's yes: the audit (section 13), `main` moved
-   forward to the branch, a normal push. The owner has said not to push
-   or merge it. On the laptop it then needs `git pull`, `npm run build`
-   and `npm test` (230 core tests; no new package).
+2. **Push the two Claude commits, when the owner says so.** They are on
+   `feature/claude-api` and, on top of it, `feature/claude-explicit-only`
+   on the Mac; `docs/CLAUDE-API.md` and section 7 explain them. With the
+   owner's yes: the audit (section 13), `main` moved forward to
+   `feature/claude-explicit-only`, a normal push. The owner has said not
+   to push or merge them. On the laptop they then need `git pull`, `npm
+   run build` and `npm test` (261 core tests; no new package).
 3. **Windows laptop, acceptance checks of Phase 2**, as far as they are
    still open. Section 8 of the setup plan and
    `docs/PHASE-2-ACCEPTANCE.md`, in that page's order (the owner's
@@ -1138,7 +1408,7 @@ of the owner.
    laptop (step 2), an API key in `.env` (ignored by git) and credit on
    the API account; a Claude subscription does not include any. Then
    section 10 of `docs/LAPTOP-SETUP.md`: `cloud status`, `cloud check`,
-   the switch on the screen, and the checks C1 to C8 in
+   the switch on the screen, and the checks C1 to C12 in
    `docs/CLAUDE-API.md`. They show a request to Sonnet and one to Haiku,
    streaming, the stored usage, the cost against the reservation, and that
    the fallback option is accepted. If Anthropic turns a request down,
@@ -1220,6 +1490,17 @@ updated first; section 11, point 2).
 - **A package is updated on purpose.** In a commit of its own, after
   reading what changed, to a version that fits the Fastify in use. Never
   with `npm audit fix --force`. Run `npm audit` after every install.
+- **Local first. Claude only when the owner asks for it, message by
+  message.** No code may choose a cloud model for any other reason: not
+  for a long or hard question, not when the local model is missing or
+  fails, not for background work, not from a setting. `chooseProvider`
+  has one door, and a test tries every combination of circumstances
+  against it (`apps/core/test/local-first.test.ts`). What counts as asking
+  is a fixed list of command forms at the beginning of a message, never a
+  model's reading, and never words later in a message: those can be a
+  refusal, somebody else's words or pasted text. A turn that goes on
+  after a card keeps a request for Claude only while it is still the
+  latest question. A local answer is never passed off as Claude's.
 - **Cloud models are the owner's to switch on.** Off by default, and
   nothing a program wrote may count as the owner's yes. Never ask the
   owner for the API key, never put one in a command, a file of this

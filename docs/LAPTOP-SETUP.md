@@ -117,18 +117,21 @@ Use the test instance on port 7127 for the checks.
 
 ## 10. Claude, the optional cloud model
 
-Only when you want it. It needs an API key and credit from the Anthropic
-Console; a Claude subscription does not include API use. What it is, what
-it sends and what it costs: [CLAUDE-API.md](CLAUDE-API.md). This is also
-how check H1 of the acceptance page is done.
+Only when you want it. HELIOS answers with the local model and uses
+Claude only for a message in which you ask for it. It needs an API key
+and credit from the Anthropic Console; a Claude subscription does not
+include API use. What it is, how to ask for it, what it sends and what it
+costs: [CLAUDE-API.md](CLAUDE-API.md). This is also how check H1 of the
+acceptance page is done.
 
 | Step | Check |
 |---|---|
 | `npm run homebase -- cloud status` | "Cloud models: off", and whether a key is set. Nothing is sent |
 | Put the key in `.env` next to `package.json`, as `ANTHROPIC_API_KEY=...` | `git status` does not list `.env`; `cloud status` says "API key: set" |
 | `npm run homebase -- cloud check`, then `cloud check strong`, answering `yes` | Each model answers in one sentence, with tokens and cost. Two billed requests, a cent or two together |
-| Start the core. On the main screen, top right: "Cloud models off · Turn on", and enter the password | "Cloud models on · Anthropic" |
-| Run the checks C1 to C8 of the Claude page and fill in its table | Every line says "Passed" or "Failed", not "Not run" |
+| Start the core. On the main screen, top right: "Claude off · Turn on", and enter the password | "Claude on · only when you ask" |
+| Ask an ordinary question, then "Ask Claude ..." with the same question | The local model (`gpt-oss:20b`) answers the first, Claude the second. The model's name is under each answer |
+| Run the checks C1 to C12 of the Claude page and fill in its table | Every line says "Passed" or "Failed", not "Not run" |
 
 ## 11. Report back
 

@@ -11,7 +11,7 @@ committed, so work can stop after any step without leaving a broken state.
 | 1. Foundation | Built and tested on a Mac. Not yet run on the Windows laptop |
 | 2. HELIOS core | In progress: text conversation, routing and budget built; the AI and voice stack is built and merged, tested on the Mac only |
 | 2.5 Web access | Built and tested on the Mac, with the internet played by the tests. Not yet run with a real search key, with the laptop's model, or on the laptop |
-| 2.6 Claude as an optional cloud model | A first version, built and tested on the Mac with stand-ins. Not yet run against the real API: no key exists |
+| 2.6 Claude as an optional cloud model | Built and tested on the Mac with stand-ins. Local first: Claude answers only a message that asks for it (2.6.1). Not yet run against the real API: no key exists |
 | 3. Memory and second brain | First piece built: full-text search over conversations |
 | 4. Neural interface | Not started |
 | 5. Action and integrations | Not started |
@@ -152,10 +152,10 @@ Done when (the checks are W1 to W10 in WEB-ACCESS.md, all "Not run"):
 
 ## Phase 2.6: Claude as an optional cloud model
 
-Goal: a hard question can go to Claude through Anthropic's API when the
-owner has allowed it, inside a spending limit, without anything sensitive
-leaving the machine unasked. The local model stays the default. Full
-description: [CLAUDE-API.md](CLAUDE-API.md).
+Goal: the owner can ask for Claude, through Anthropic's API, for a
+message, inside a spending limit, without anything sensitive leaving the
+machine unasked. The local model is the default, and HELIOS never chooses
+Claude by itself. Full description: [CLAUDE-API.md](CLAUDE-API.md).
 
 The provider, the routing rules, the approval before sensitive content is
 sent and the budget were built with the AI and voice stack. This phase
@@ -182,17 +182,46 @@ Built (each with automated tests, on the Mac, without a key):
 - [x] The real SDK driven against a stand-in service on the machine
       itself: the request it sends, the stream it reads, its errors.
 
+Phase 2.6.1, the owner's routing decision of 20 November 2026 (built, with
+tests):
+
+- [x] Local first. A cloud model is looked at only for a message in which
+      the owner asked for Claude. Length, difficulty, a missing or failing
+      local model, background work and the old settings no longer lead
+      there.
+- [x] Asking is a fixed list of commands that name Claude, typed or
+      spoken, at the beginning of a message, or the screen's "Ask
+      Claude". A mention, a question about it, "don't", and anything
+      later in a message (pasted text included) is not asking. No model
+      decides it.
+- [x] The request belongs to one message: it is written on that message,
+      the turn reads it there, and the next message starts without it.
+- [x] When Claude was asked for and another model answers, HELIOS says so
+      first, on screen and by voice, and the answer carries its own
+      model's name. It also says so when a message holds words like "ask
+      Claude" that were not taken as a request.
+- [x] A card that asks whether a conversation may go to Claude is closed
+      by the next message. Every other card remembers its question: a
+      yes that comes after the owner has said something else never
+      brings Claude in.
+
 Not done:
 
 - [ ] Any request to the real API. `cloud check` is the first one.
 - [ ] Protected storage for the key.
 - [ ] Taking back words already shown or spoken when an answer breaks off.
-- [ ] Background work for the light model.
+- [ ] A use for the light model. Only `cloud check` calls it. Under the
+      owner's decision nothing but a message that asks for Claude reaches
+      a cloud model, so background work for it would need the owner's
+      word first.
+- [ ] A way to cancel an answer that is under way.
 
-Done when (the checks are C1 to C8 in CLAUDE-API.md, all "Not run"):
+Done when (the checks are C1 to C12 in CLAUDE-API.md, all "Not run"):
 
-- [ ] With a key and the switch on, a hard question is answered by Claude,
-      the words appear as they are written, and the cost is counted.
+- [ ] With a key and the switch on, a message that asks for Claude is
+      answered by Claude, the words appear as they are written, and the
+      cost is counted. A message that does not ask is answered locally,
+      however long or hard it is.
 - [ ] With the switch off, nothing is sent, whatever is asked.
 - [ ] Sensitive records wait for a yes.
 - [ ] A wrong key is said as a wrong key, and the local model answers.
@@ -290,14 +319,16 @@ file first.
 
 **Last updated:** 19 November 2026
 
-**Current work: Claude as an optional cloud model (Phase 2.6).** A first
-version, built and tested on the Mac on 19 November 2026 and committed on
-the branch `feature/claude-api`. Not pushed and not on `main`: that waits
-for the owner's word. Cloud models are off until switched on, HELIOS
-handles the key itself, failures are explained, and the budget counts on
-the safe side. No real request has been made: no API key exists. What it
-is, what it costs and the checks for the laptop are in
-[CLAUDE-API.md](CLAUDE-API.md).
+**Current work: Claude as an optional cloud model (Phases 2.6 and
+2.6.1).** Built and tested on the Mac on 19 and 20 November 2026, in two
+commits: `feature/claude-api`, and on top of it
+`feature/claude-explicit-only`. Not pushed and not on `main`: that waits
+for the owner's word. HELIOS is local first. Claude answers only a message
+in which the owner asks for it, and only once cloud models are switched
+on. HELIOS handles the key itself, failures are explained, and the budget
+counts on the safe side. No real request has been made: no API key
+exists. How to ask for Claude, what it costs and the checks for the laptop
+are in [CLAUDE-API.md](CLAUDE-API.md).
 
 **Before that: web access (Phase 2.5) and a security fix.** Both are on
 `main` and were pushed on 19 November 2026. Web access still needs a
@@ -358,7 +389,12 @@ integrated, tested and documented, and the owner says so.
   found and fixed on the way (the budget warning could land between a
   tool request and its result; a turn that went on after an approval
   could start its view somewhere else).
-- 230 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
+- Claude only when asked (Phase 2.6.1), on the branch
+  `feature/claude-explicit-only`, not pushed: the model on this machine
+  answers everything unless the message asks for Claude by name or with
+  the screen's "Ask Claude". The "think hard" option and the settings that
+  sent questions to the cloud by themselves are gone.
+- 261 core tests and 75 voice-worker tests pass on the Mac (`npm test`, and `uv run pytest` in `apps/voice`).
 - On the Windows laptop the core tests failed in the HTTP tests: their shared
   folder was removed while its database was still open, which Windows
   refuses. The tests' cleanup was fixed on the Mac and pushed on 16 November
@@ -389,7 +425,9 @@ integrated, tested and documented, and the owner says so.
 5. Done: push-to-talk on the screen (hold the button or the space bar),
    a stop button while HELIOS speaks, the "think hard" option for the
    stronger model, and the model and reason under each answer. Checked in
-   a browser against the real worker process with scripted engines.
+   a browser against the real worker process with scripted engines. (The
+   "think hard" option became "Ask Claude" on 20 November 2026: it sends
+   one message to Claude, and nothing else does.)
 6. Done: the audition tool (36 files written to the `voice-audition`
    folder, nothing played), benchmarks with one model per process
    (`docs/benchmarks/`), the streaming Parakeet export checked (it works,

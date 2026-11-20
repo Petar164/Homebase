@@ -124,6 +124,8 @@ export type ConversationMessage = {
   route: string | null;
   /** Set on an answer for which the live web was searched or read. */
   web?: WebUse | null;
+  /** Set on one of the owner's messages that asked for Claude, in words or with the screen's "Ask Claude". It holds for that message only. */
+  askedClaude?: boolean;
 };
 
 /** A yes HELIOS is waiting for. */
@@ -181,5 +183,9 @@ export type CoreEvent =
   | { type: "state"; state: HeliosState }
   | { type: "message"; conversationId: string; message: ConversationMessage }
   | { type: "delta"; conversationId: string; text: string }
+  /** Which model is working on an answer right now, by name; `model` is null when it has finished. `cloud` is true for Claude. */
+  | { type: "answering"; conversationId: string; model: string | null; cloud: boolean }
+  /** A remark that has to be heard before the answer it is about: that this answer is not Claude's, and why. The screen gets it as a message. */
+  | { type: "notice"; conversationId: string; text: string }
   | { type: "approval"; approval: Approval }
   | { type: "activity"; conversationId: string; activity: WebActivity };

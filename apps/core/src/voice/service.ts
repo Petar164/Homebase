@@ -118,6 +118,9 @@ export class VoiceService {
     // handed to the worker at once, so speech starts before the answer is complete.
     this.bus.subscribe((event) => {
       if (event.type === "delta" && this.answer) this.feed(event.text);
+      // A remark that must be heard before the answer it is about: that
+      // the answer which follows is not Claude's, and why.
+      if (event.type === "notice" && this.answer) this.feed(`${event.text.trim()} `);
     });
   }
 
@@ -346,7 +349,8 @@ export class VoiceService {
       // answer from a model that did not stream.
       for (const message of turn.messages) {
         if (message.role === "user") continue;
-        if (message.role === "assistant" && answer.spoken.includes(speakable(message.text).slice(0, 40))) continue;
+        // Already said while the turn was running: the answer itself, or a remark that had to come before it.
+        if (answer.spoken.includes(speakable(message.text).slice(0, 40))) continue;
         this.speakSentence(message.text);
       }
     } catch (error) {

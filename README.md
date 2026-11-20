@@ -41,8 +41,10 @@ Home Base is the whole system. HELIOS is the assistant inside it.
   sources that are links on screen, and says so when the web fails. What a
   request may carry out of the machine is decided by fixed rules, and
   anything that could be private waits for a yes. It needs a search key.
-- **Claude as an optional cloud model, off until switched on.** Hard
-  questions can go to Claude through Anthropic's API, inside a monthly
+- **Local first, with Claude on request.** The model on this machine
+  answers. Claude, through Anthropic's API, answers only a message that
+  begins by asking for it ("Ask Claude ..."), and only once you have
+  switched it on. HELIOS never chooses it by itself. It works inside a monthly
   limit in euros, and never with sensitive records unless you said yes to
   that conversation. It needs its own API key; a Claude subscription does
   not include API use. Not yet run against the real API.

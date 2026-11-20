@@ -33,12 +33,11 @@ const configSchema = z.object({
     .prefault({}),
   ai: z
     .object({
-      /**
-       * "auto": the local model for ordinary requests, a cloud model for
-       * hard ones. "local": never the cloud unless the owner asks for
-       * stronger reasoning. "cloud": cloud models first.
-       */
-      prefer: z.enum(["auto", "local", "cloud"]).default("auto"),
+      // There is no setting here for which model answers. The model on this
+      // machine does, and Claude only for a message in which the owner asks
+      // for it (ai/policy.ts). Earlier versions had `prefer` and `routing`,
+      // which could send a question to the cloud by themselves. They are no
+      // longer read: a settings file that still holds them changes nothing.
       /** When true, small reversible changes (tier 1) run without asking. */
       autoApproveTier1: z.boolean().default(false),
       local: z
@@ -75,9 +74,9 @@ const configSchema = z.object({
            * an https address, or this machine itself.
            */
           baseUrl: z.string().default(""),
-          /** Hard reasoning, complex planning, analysis. */
+          /** The model that answers when the owner asks for Claude. */
           strongModel: z.string().default("claude-sonnet-5-5"),
-          /** Extraction, classification, summaries, background work. */
+          /** The cheap model. Only the `cloud check` command calls it; no conversation and no background work does. */
           lightModel: z.string().default("claude-haiku-5-5"),
           /** How hard each model thinks. Lower answers faster and costs less. */
           effort: z
@@ -118,12 +117,6 @@ const configSchema = z.object({
               "claude-haiku-5-5": { input: 0.1, output: 0.5, inputAbove100k: 0.5, outputAbove100k: 2.5 },
               "claude-opus-5-5": { input: 4, output: 20 },
             }),
-        })
-        .prefault({}),
-      routing: z
-        .object({
-          /** A request longer than this many characters counts as a hard one. */
-          complexChars: z.number().int().min(50).default(600),
         })
         .prefault({}),
     })

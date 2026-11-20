@@ -183,11 +183,12 @@ describe("the key for Claude", () => {
     const logged: string[] = [];
     const { instance, helios } = await setup([localModel([{ text: "from this machine" }]), claude], { cloud: true, logged });
 
-    const turn = await helios.handleMessage("Think hard about this plan");
+    const turn = await helios.handleMessage("Ask Claude about this plan.");
     expect(refused.sent).toHaveLength(1);
     expect(turn.messages.map((message) => message.text)).toEqual([
-      "Think hard about this plan",
+      "Ask Claude about this plan.",
       "claude-sonnet-5-5 could not answer. Anthropic did not accept the API key. Check ANTHROPIC_API_KEY in the .env file.",
+      "The answer below is from the model on this machine, not from Claude.",
       "from this machine",
     ]);
 
@@ -195,7 +196,7 @@ describe("the key for Claude", () => {
     const everything = [...logged, ...stored, JSON.stringify(turn), JSON.stringify(await helios.status()), JSON.stringify(instance.config)].join("\n");
     expect(everything).not.toContain(KEY);
     expect(logged.join("\n")).toContain("Model claude-strong failed (auth).");
-    expect(logged.join("\n")).not.toContain("Think hard"); // and nothing that was typed
+    expect(logged.join("\n")).not.toContain("about this plan"); // and nothing that was typed
   });
 });
 
@@ -518,10 +519,15 @@ describe("cloud models are off until the owner switches them on", () => {
     const local = localModel([{ text: "from this machine" }, { text: "again from this machine" }]);
     const { instance, helios } = await setup([local, claude]);
 
-    const asked = await helios.handleMessage("Think hard about this: which plan is better?");
-    expect(asked.messages.at(-1)).toMatchObject({ text: "from this machine", route: "the stronger model was not used: cloud models are switched off" });
+    const asked = await helios.handleMessage("Ask Claude which plan is better.");
+    expect(asked.messages.map((message) => message.text)).toEqual([
+      "Ask Claude which plan is better.",
+      "Claude is switched off on this machine, so it was not asked. You can turn cloud models on from the main screen. The answer below is from the model on this machine.",
+      "from this machine",
+    ]);
+    expect(asked.messages.at(-1)).toMatchObject({ model: "local-model", route: "you asked for Claude, but cloud models are switched off" });
     const long = await helios.handleMessage("Compare the two suppliers and analyse the trade-offs", { conversationId: asked.conversationId });
-    expect(long.messages.at(-1)).toMatchObject({ text: "again from this machine", route: "kept local: cloud models are switched off" });
+    expect(long.messages.at(-1)).toMatchObject({ text: "again from this machine", route: "an ordinary request" });
     expect(made).toBe(0);
     expect(egress(instance)).toEqual([]);
     expect((await helios.status()).cloud).toEqual({ enabled: false, ready: false, service: "Anthropic", models: ["claude-sonnet-5-5"], problem: "cloud models are switched off" });
@@ -540,7 +546,7 @@ describe("cloud models are off until the owner switches them on", () => {
 
     const cloud = strongCloud([{ text: "must not be asked" }]);
     const helios = new Helios({ instance, providers: [localModel([{ text: "from this machine" }]), cloud], bus: new EventBus(), log: silentLogger });
-    expect((await helios.handleMessage("Think hard about this plan")).messages.at(-1)).toMatchObject({ text: "from this machine" });
+    expect((await helios.handleMessage("Ask Claude about this plan.")).messages.at(-1)).toMatchObject({ text: "from this machine" });
     expect(cloud.requests).toHaveLength(0);
 
     // The next time the settings are saved, the old switch is gone from the file.
@@ -553,9 +559,9 @@ describe("cloud models are off until the owner switches them on", () => {
   it("answers with the reason when there is no local model either", async () => {
     const cloud = strongCloud([{ text: "must not be asked" }]);
     const { helios } = await setup([cloud]);
-    const turn = await helios.handleMessage("What is due this week?");
+    const turn = await helios.handleMessage("Ask Claude what is due this week.");
     expect(cloud.requests).toHaveLength(0);
-    expect(turn.messages.at(-1)).toMatchObject({ role: "system", text: "Cloud models are switched off, and no local model is running." });
+    expect(turn.messages.at(-1)).toMatchObject({ role: "system", text: "Claude is switched off on this machine, so it was not asked. You can turn cloud models on from the main screen. No model on this machine is running either." });
   });
 
   it("says what is still missing once they are on", async () => {
@@ -629,7 +635,7 @@ describe("a cloud model's tool requests", () => {
     ]);
     const { instance, helios } = await setup([cloud], { cloud: true });
 
-    const turn = await helios.handleMessage("Think hard, then add that task");
+    const turn = await helios.handleMessage("Ask Claude to add that task.");
     // The change waits for the owner; the tool that does not exist and the malformed request are turned away. Nothing has run.
     expect(turn.approvals).toHaveLength(1);
     expect(turn.approvals[0]).toMatchObject({ kind: "tool", tier: 1, status: "pending" });
@@ -654,30 +660,36 @@ describe("when a cloud model fails in the middle of a turn", () => {
     const local = localModel([{ text: "from this machine" }, { text: "and again" }]);
     const { instance, helios } = await setup([local, cloud], { cloud: true });
 
-    const turn = await helios.handleMessage("Think hard about this plan");
+    const turn = await helios.handleMessage("Ask Claude about this plan.");
     expect(turn.messages.map((message) => [message.role, message.text])).toEqual([
-      ["user", "Think hard about this plan"],
+      ["user", "Ask Claude about this plan."],
       ["system", "cloud-model could not answer. Anthropic reports a billing problem. The API account may have no credit left; a Claude subscription does not include any."],
+      ["system", "The answer below is from the model on this machine, not from Claude."],
       ["assistant", "from this machine"],
     ]);
-    expect(turn.messages.at(-1)?.route).toBe("the stronger model was not used: the cloud model could not answer");
+    // The answer carries the name of the model that really wrote it.
+    expect(turn.messages.at(-1)).toMatchObject({ model: "local-model", route: "you asked for Claude, but it could not answer" });
     expect(egress(instance)).toEqual([{ provider: "cloud", outcome: "failed", cost: 0, estimated: 0 }]);
     expect(budgetStatus(instance.db, instance.config).spentEur).toBe(0);
     expect(instance.db.prepare("SELECT COUNT(*) AS n FROM cloud_reservations").get()).toEqual({ n: 0 }); // nothing stays set aside
   });
 
-  it("leaves no remark when the request was only stopped", async () => {
+  it("says only that the answer is not Claude's when the request was merely stopped", async () => {
     const cloud = strongCloud([new ProviderError("aborted", "The request to Claude was stopped.")]);
     const { helios } = await setup([localModel([{ text: "from this machine" }]), cloud], { cloud: true });
-    const turn = await helios.handleMessage("Think hard about this plan");
-    expect(turn.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    const turn = await helios.handleMessage("Ask Claude about this plan.");
+    expect(turn.messages.map((message) => [message.role, message.text])).toEqual([
+      ["user", "Ask Claude about this plan."],
+      ["system", "The answer below is from the model on this machine, not from Claude."],
+      ["assistant", "from this machine"],
+    ]);
   });
 
   it("counts a call that broke off after the answer had begun as spent, at the most it could have cost", async () => {
     for (const failure of [brokeOff(), new Error("something nobody foresaw")]) {
       const cloud = strongCloud([failure]);
       const { instance, helios } = await setup([localModel([{ text: "from this machine" }]), cloud], { cloud: true });
-      await helios.handleMessage("Think hard about this plan");
+      await helios.handleMessage("Ask Claude about this plan.");
       const [row] = egress(instance);
       expect(row).toMatchObject({ provider: "cloud", outcome: "sent", estimated: 1 });
       expect(row?.cost).toBeGreaterThan(0);
@@ -694,7 +706,7 @@ describe("when a cloud model fails in the middle of a turn", () => {
     const { instance, helios } = await setup([local, cloud], { cloud: true });
     instance.config.ai.autoApproveTier1 = true; // small changes run without asking
 
-    const turn = await helios.handleMessage("Think hard, then add a task to call the bank");
+    const turn = await helios.handleMessage("Ask Claude to add a task to call the bank.");
     // The first request ran at once, as the owner's settings allow. The repeated one did not: it waits for the owner.
     expect(taskTitles(instance)).toEqual(["Call the bank"]);
     expect(turn.approvals).toHaveLength(1);
@@ -705,12 +717,12 @@ describe("when a cloud model fails in the middle of a turn", () => {
     const seen = local.requests[0]?.messages ?? [];
     expect(seen.find((message) => message.role === "assistant" && message.toolCalls.length > 0)).toMatchObject({ toolCalls: [{ id: "c1", name: "add_task" }], provider: "cloud" });
     expect(seen.find((message) => message.role === "tool")).toMatchObject({ results: [{ id: "c1", isError: false }] });
-    expect(turn.messages.map((message) => message.role)).toEqual(["user", "system", "assistant"]);
+    expect(turn.messages.map((message) => message.role)).toEqual(["user", "system", "system", "assistant"]);
 
     // Without a failure, the same setting still lets a small change run by itself.
     const calm = await setup([strongCloud([{ toolCalls: [call("add_task", task, "c1")] }, { text: "Added." }])], { cloud: true });
     calm.instance.config.ai.autoApproveTier1 = true;
-    expect((await calm.helios.handleMessage("Think hard, then add a task to call the bank")).approvals).toEqual([]);
+    expect((await calm.helios.handleMessage("Ask Claude to add a task to call the bank.")).approvals).toEqual([]);
     expect(taskTitles(calm.instance)).toEqual(["Call the bank"]);
   });
 });
@@ -730,7 +742,7 @@ describe("what a turn leaves in the transcript", () => {
     cheapPrices(instance);
     instance.config.ai.cloud.budget.warnEur = 0.005; // passed by the first call of the turn
 
-    const turn = await helios.handleMessage("Think hard: what is open?");
+    const turn = await helios.handleMessage("Ask Claude what is open.");
     // (The first row is the hidden note that tells the model today's date.)
     expect(roles(instance)).toEqual(["system", "user", "assistant", "tool", "system", "assistant"]);
     expect(turn.messages.map((message) => message.text).join(" ")).toMatch(/reached €0.005 of the €20 limit/);
@@ -748,10 +760,10 @@ describe("what a turn leaves in the transcript", () => {
     const cloud = strongCloud([...earlier, { toolCalls: [call("get_money_summary", { month: "2026-11" }, "c1")] }, { text: "You made one sale." }]);
     const { helios } = await setup([cloud], { cloud: true });
     let conversationId: string | undefined;
-    for (let index = 0; index < earlier.length; index++) ({ conversationId } = await helios.handleMessage(`Question ${index + 1}`, { conversationId }));
+    for (let index = 0; index < earlier.length; index++) ({ conversationId } = await helios.handleMessage(`Question ${index + 1}`, { conversationId, claude: true }));
 
     // Money figures are sensitive: the turn stops and asks before it sends them on.
-    const held = await helios.handleMessage("How did the shop do this month?", { conversationId });
+    const held = await helios.handleMessage("How did the shop do this month?", { conversationId, claude: true });
     expect(held.approvals[0]).toMatchObject({ kind: "cloud_egress", status: "pending" });
     const before = cloud.requests.at(-1)?.messages ?? [];
 

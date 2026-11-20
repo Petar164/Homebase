@@ -16,7 +16,10 @@ const messageSchema = z.object({
   conversationId: z.string().regex(/^[\w-]{1,64}$/).optional(),
 });
 const decisionSchema = z.object({ decision: z.enum(["approve", "deny"]) });
-const messageOptions = z.object({ reasoning: z.enum(["strong"]).optional() });
+// `claude`: the owner chose "Ask Claude" for this one message. Anything
+// else a client sends along is dropped, including the "reasoning" option of
+// earlier versions, which could select the cloud model.
+const messageOptions = z.object({ claude: z.boolean().optional() });
 const listenSchema = z.object({ action: z.enum(["start", "stop", "cancel"]) });
 const saySchema = z.object({ text: z.string().trim().min(1).max(300) });
 const voiceSettingsSchema = z
@@ -78,7 +81,7 @@ export function registerHeliosRoutes(app: FastifyInstance, helios: Helios, bus: 
 
   app.post("/api/helios/message", async (request): Promise<TurnResult> => {
     const input = parse(messageSchema.extend(messageOptions.shape), request.body);
-    return helios.handleMessage(input.text, { conversationId: input.conversationId, channel: "text", reasoning: input.reasoning });
+    return helios.handleMessage(input.text, { conversationId: input.conversationId, channel: "text", claude: input.claude === true });
   });
 
   // ---------- voice ----------

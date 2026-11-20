@@ -292,6 +292,7 @@ async function main(args: string[]): Promise<void> {
       const strong = new ClaudeProvider({ role: "strong", model: cloud.strongModel, baseUrl: cloud.baseUrl });
       const { service, problem } = strong.describe();
       console.log(`Cloud models:   ${cloud.allowed ? "on" : "off (switch them on from the screen; a key alone switches nothing on)"}`);
+      console.log(`Used:           only for a message in which you ask for Claude ("Ask Claude ...", or the screen's Ask Claude). Never by itself.`);
       console.log(`Sent to:        ${service}`);
       // Only whether a usable key is there. No part of it is ever printed.
       console.log(`API key:        ${problem ? `not usable: ${problem}` : "set"}`);

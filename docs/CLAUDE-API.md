@@ -1,11 +1,14 @@
 # Claude as an optional cloud model
 
-HELIOS answers with the model on this machine. It can also hand a hard
-question to Claude, through Anthropic's API, when the owner has allowed
-that. This page says how that is set up, what it sends, what it costs and
-what happens when it fails.
+**HELIOS is local first.** The model on this machine answers. Claude,
+through Anthropic's API, answers one message only when you ask for Claude
+in that message, and only if you have switched cloud models on. HELIOS
+never chooses Claude by itself.
 
-Related: [which model answers and how the budget counts](AI-VOICE-STACK.md),
+This page says how to ask for Claude, how it is set up, what it sends,
+what it costs and what happens when it fails.
+
+Related: [the models and the budget](AI-VOICE-STACK.md),
 [the security model](SECURITY.md), [web access](WEB-ACCESS.md).
 
 **Status.** Built and tested on the Mac with stand-ins. **No real request
@@ -14,53 +17,121 @@ are for the first real ones.
 
 ## In short
 
+- **The local model is the default, always.** On the laptop that is
+  `gpt-oss:20b`. A long question, a hard question, a missing or failing
+  local model: none of these sends anything to Claude.
+- **Claude answers only when you ask for it**, for that one message: begin
+  the message with "Ask Claude ...", spoken or typed, or use "Ask Claude"
+  on the screen. The next message is an ordinary one again.
 - **Off until you switch it on.** A key in the `.env` file does not switch
   anything on. The switch is on the main screen and asks for the password.
-- **The local model stays the default.** On the laptop that is
-  `gpt-oss:20b`. Claude is asked only when a fixed rule says so, and you
-  can keep it to requests you ask for yourself (`ai.prefer: "local"`).
+  Switching it on makes Claude available to be asked for. Nothing more.
 - **It is billed per request, on its own.** A Claude subscription (Pro or
   Max) does not include API use. The API needs its own key and its own
   credit, from the Anthropic Console.
 - **A monthly limit in euros**, €20 unless you change it. When it is
   reached, nothing more is sent and the local model answers.
-- **Sensitive records are not sent without a yes for that conversation.**
-  Anything that looks like a password or a key is never sent.
+- **Sensitive records are not sent without a yes for that conversation**,
+  also when you asked for Claude. Anything that looks like a password or
+  a key is never sent.
 
 ## How it works
 
 ```
-your question
+your message
      │
      ▼
- fixed rules pick the model ──► the local model (the usual case)
+ does this message ask for Claude?        (it begins with one of a fixed
+     │                                      list of commands, or the
+     │                                      screen's "Ask Claude" was used)
+     ├── no ──► the model on this machine answers. Always.
      │
-     │ a hard question, or you asked for stronger reasoning
-     ▼
- may this go to the cloud?   switched on · room in the budget ·
-     │                       nothing secret · nothing sensitive
-     │                       without your yes
-     ▼
- the most it can cost is set aside
-     │
-     ▼
- Claude answers ──► words on screen and by voice
-     │
-     └─► or asks for a tool ──► the same gate as for every model:
-                                checked, and confirmed by you
-                                where a confirmation is needed
+     └── yes
+          ▼
+      may it go to Claude?    switched on · a usable key · room in the
+          │                   budget · nothing secret · nothing sensitive
+          │                   without your yes
+          ├── no ──► HELIOS says why, and the model on this machine
+          │          answers under its own name
+          ▼
+      the most it can cost is set aside
+          │
+          ▼
+      Claude answers this one message ──► words on screen and by voice
+          │
+          └─► or asks for a tool ──► the same gate as for every model
 ```
 
-The rules that pick the model are in
-[AI-VOICE-STACK.md](AI-VOICE-STACK.md#routing-which-model-answers). Two
-Claude models are set up: a strong one for hard questions
-(`claude-sonnet-5-5`) and a light one for background work and for when no
-local model is running (`claude-haiku-5-5`). Both names are settings.
+The rule is in `apps/core/src/ai/policy.ts`, in one place: a cloud model
+is looked at only for a message that asks for Claude. The provider is
+`apps/core/src/ai/claude.ts`, on Anthropic's official SDK,
+`@anthropic-ai/sdk`. The turn loop is `apps/core/src/ai/helios.ts`.
 
-The code is `apps/core/src/ai/claude.ts` (the provider),
-`apps/core/src/ai/policy.ts` (the rules and the budget) and the turn loop
-in `apps/core/src/ai/helios.ts`. It uses Anthropic's official SDK,
-`@anthropic-ai/sdk`.
+## How to ask for Claude
+
+There are two ways, and both hold for one message only.
+
+**On the screen.** "Ask Claude", next to the message box. It lights up,
+the message box says "This one message goes to Claude", and after you
+send the message it is off again. It is for a typed message: if you hold
+the talk button instead, it goes off, and a spoken message asks in words.
+
+**In words, typed or spoken.** Begin your message by telling HELIOS to
+use Claude, by name:
+
+| You say | |
+|---|---|
+| "Ask Claude to analyze this." "Ask Claude what I should drop." | the usual form |
+| "Use Claude for this question." "Try Claude." | |
+| "Let Claude answer this one." "Have Claude look at this." "Get Claude to check the numbers." | |
+| "Send this to Claude." "Run it by Claude." "Switch to Claude for this." | |
+| "Check this with Claude." "Compare the two plans using Claude." | |
+| "I want Claude for this one." | |
+
+**The command comes first.** Only the beginning of a message is read for
+it. A greeting may stand before it ("Helios, ...", "Thanks. Now ..."), and
+so may "please", "can you", "could you", "I'd like you to" and "let's".
+The question can follow the command: "Ask Claude: what is the best plan
+here?", or "Use Claude for this question: ...". A command on its own
+refers to what was said before it: "Ask Claude to analyze this."
+
+These are a fixed list, read by a fixed rule. No model is asked what you
+meant. So the same words always decide the same way, and what does not
+match stays on this machine:
+
+- **A mention is not a request**: "What is Claude?", "I read about Claude
+  yesterday", "my chat with Claude went badly".
+- **Wondering is not a request**: "Should I ask Claude?", "Ask Claude?",
+  "If I ask Claude, what does it cost?"
+- **Saying not to is not a request**: "Don't ask Claude.", and also "Don't,
+  under any circumstances, ask Claude."
+- **Anything later in the message is not a request**: thinking aloud ("I
+  could just ask Claude"), what somebody else said ("He said, ask
+  Claude"), and text you pasted in. An article that ends in "Try Claude
+  today" does not send itself to Claude.
+- **Other words are not the name**: "the cloud model", "the stronger
+  model", "think hard", "Sonnet", "Claude Code", "Claude's API key". The
+  phrases that selected the cloud model in earlier versions no longer do.
+- **Speaking to Claude is not asking HELIOS for it**: "Claude, what do
+  you think?"
+
+**When the words come close.** A request that does not come first is not
+a request either: "What is the best plan here? Ask Claude." stays on this
+machine. So that you do not take the answer for Claude's, HELIOS says so
+before it answers, on screen and by voice, whenever a message holds such
+a command without beginning with it: "I did not take that as a request
+for Claude, so the answer below is from this machine. To ask Claude, begin
+your message with "Ask Claude"."
+
+By voice the same rule reads what the speech recogniser wrote. If it
+mishears the name as "cloud", the request is not recognised and the local
+model answers. Say it again, or use the screen.
+
+**What you see.** Your message is marked "asked Claude". While Claude is
+at work the screen says "Claude is answering" with the model's name. Under
+every answer stands the model that wrote it and why: "you asked for
+Claude", or "an ordinary request". The request is also written to the
+audit log, and each call to the egress log.
 
 ## Setting it up
 
@@ -74,8 +145,8 @@ in `apps/core/src/ai/helios.ts`. It uses Anthropic's official SDK,
    light model, after asking you. It costs a fraction of a cent, shows
    what it cost, and tells you plainly if the key or the account is
    refused. Add `strong` to test the strong model.
-5. Start the core. On the main screen, top right: "Cloud models off ·
-   Turn on", and enter the password.
+5. Start the core. On the main screen, top right: "Claude off · Turn on",
+   and enter the password. It then says "Claude on · only when you ask".
 
 To stop using it, "Turn off" works at once and needs no password. Taking
 the key out of `.env` has the same effect after a restart.
@@ -86,10 +157,9 @@ In `config.json` in the data folder, under `ai`:
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `cloud.allowed` | `false` | The switch. The screen's "Turn on" sets it |
-| `prefer` | `"auto"` | `"auto"`: hard questions go to Claude. `"local"`: only when you ask for stronger reasoning. `"cloud"`: Claude first |
-| `cloud.strongModel` | `claude-sonnet-5-5` | For hard questions |
-| `cloud.lightModel` | `claude-haiku-5-5` | For background work, and when no local model runs |
+| `cloud.allowed` | `false` | The switch. The screen's "Turn on" sets it. On means: Claude can be asked for |
+| `cloud.strongModel` | `claude-sonnet-5-5` | The model that answers when you ask for Claude |
+| `cloud.lightModel` | `claude-haiku-5-5` | Used by `cloud check` only. Nothing in a conversation uses it |
 | `cloud.effort.strong`, `.light` | `medium`, `low` | How hard each model thinks. Lower is faster and cheaper |
 | `cloud.maxOutputTokens.strong`, `.light` | 8,000, 2,000 | The longest one answer may be. Also the most one answer can cost |
 | `cloud.budget.capEur`, `.warnEur` | 20, 15 | The monthly limit and the warning before it |
@@ -97,26 +167,33 @@ In `config.json` in the data folder, under `ai`:
 | `cloud.pricePerMTok` | see below | The prices the budget counts with. Update them when Anthropic's change |
 | `cloud.baseUrl` | empty | Another address than Anthropic's own. Leave empty |
 
-An older settings file can hold `"enabled": true` under `cloud`. Earlier
-versions wrote that by themselves. It is no longer read, so it switches
-nothing on.
+There is no setting that makes HELIOS choose Claude by itself. Three
+entries of earlier versions are no longer read, so a settings file that
+still holds them changes nothing: `prefer` and `routing` (they sent long
+or analytical questions to the cloud), and `"enabled": true` under `cloud`
+(earlier versions wrote that by themselves).
 
 ## What leaves this machine
 
-When a request goes to Claude, this is sent to Anthropic, over an
-encrypted connection, and nothing else:
+Nothing leaves because cloud models are switched on. Something leaves
+only for a message that asks for Claude. Then this is sent to Anthropic,
+over an encrypted connection, and nothing else:
 
 - HELIOS's fixed instructions and the list of its tools.
-- The part of the conversation a model is shown: at most the 40 messages
-  up to your latest one. That includes what tools returned in it, such as
-  your tasks or calendar entries, and text HELIOS read from the web.
+- The part of this conversation a model is shown: at most the 40 messages
+  up to yours. "Ask Claude to analyze this" is about what was said before,
+  so that is what goes with it.
+- What Claude then asks HELIOS's tools for, to answer you: your tasks or
+  calendar, a search of earlier conversations, text from the web. Each
+  such result is labelled, and the table below applies to it.
 
-What decides whether it is sent:
+Not sent: your files, the database, other conversations as a whole, and
+no key or password of any kind.
 
-| What the conversation holds | What happens |
+| What the conversation holds | What happens when you ask for Claude |
 |---|---|
-| Ordinary and private things (your questions, tasks, calendar) | Sent, when cloud models are on and a rule picks Claude |
-| Sensitive things (money figures, anything marked sensitive) | Not sent. The local model answers. If you asked for stronger reasoning, you are asked first and shown what would go; a yes covers that conversation for 30 minutes |
+| Ordinary and private things (your questions, tasks, calendar) | Sent |
+| Sensitive things (money figures, anything marked sensitive) | Not sent until you say yes. A card shows what would go. A yes covers what that conversation holds at that moment, for 30 minutes; anything sensitive that comes in later asks again |
 | Secret things (anything that looks like a password or key) | Never sent, and not shown to the local model either |
 
 Every request that went out, was held for a yes, or was stopped by the
@@ -164,9 +241,9 @@ price page before relying on them.
 | `claude-haiku-5-5` | $0.10 (prompts up to 100,000 tokens; $0.50 above) | $0.50 ($2.50 above) |
 | `claude-opus-5-5` (not used unless you set it) | $4.00 | $20.00 |
 
-**What a question is likely to cost.** Worked out from those prices and
-from the size of HELIOS's own requests, which was measured on the Mac. It
-is not a measured bill: no request has been made.
+**What a question to Claude is likely to cost.** Worked out from those
+prices and from the size of HELIOS's own requests, which was measured on
+the Mac. It is not a measured bill: no request has been made.
 
 - HELIOS's instructions and tools are about 6,300 bytes, sent with every
   request. A first question adds a few hundred bytes. That is about 1,700
@@ -177,12 +254,13 @@ is not a measured bill: no request has been made.
 | | One answer | A question that uses one tool (two requests) | Set aside before each request |
 |---|---|---|---|
 | Sonnet 5.5 | about €0.01 | about €0.02 | €0.10 |
-| Haiku 5.5 | about €0.0005 | about €0.001 | €0.002 |
 
 In euros as the budget counts them: one dollar as one euro, plus 21 per
 cent. A long conversation costs more per question, because the earlier
-messages are sent again each time. Ten Sonnet questions a day would be
-about €3 to €6 a month.
+messages are sent again each time. Since Claude answers only when asked,
+the month's cost is the number of times you ask: ten questions a day
+would be about €3 to €6 a month. A month in which you never ask costs
+nothing.
 
 **The limit.** Before each request the most it can cost is set aside. If
 that does not fit under the monthly limit, the request is not made. After
@@ -202,26 +280,35 @@ counted on the safe side:
 The limit in HELIOS is a second line of defence. The first is the
 spending limit you can set on the account in the Anthropic Console.
 
-## When it fails
+## When Claude is not the one answering
 
-HELIOS says what went wrong, in its own words, and the local model
-answers instead when there is one.
+You asked for Claude, and it cannot or may not answer. HELIOS never
+answers in Claude's place without saying so. It says why first, on screen
+and by voice, and the answer that follows carries the name of the model
+that wrote it.
 
-| What happened | What you are told |
+| What stands in the way | What you are told, before the local model's answer |
 |---|---|
-| The key was not accepted | "Anthropic did not accept the API key. Check ANTHROPIC_API_KEY in the .env file." |
-| No credit, or a billing problem | "Anthropic reports a billing problem. The API account may have no credit left; a Claude subscription does not include any." |
-| The key may not use that model, or the model name is wrong | Named as such, with the model |
-| Too many requests, or the account's own limit | "Anthropic is limiting requests from this account right now..." |
-| The service is overloaded | Tried once more automatically, then "Anthropic's service is overloaded or having trouble right now." |
-| No internet | "Anthropic could not be reached. Check the internet connection." |
-| Claude declined the question | "The model declined to answer that." For the strong model Anthropic may answer with another Claude model instead |
+| Cloud models are switched off | "Claude is switched off on this machine, so it was not asked. You can turn cloud models on from the main screen. The answer below is from the model on this machine." Nothing is switched on for you |
+| No usable key | "Claude cannot be asked: no API key is set (ANTHROPIC_API_KEY in the .env file). ..." |
+| The month's budget is used up | "This month's cloud budget is used up, so Claude was not asked. ..." |
+| The conversation holds something secret | "This conversation holds something that never goes to a cloud model, so Claude was not asked. ..." |
+| The key was not accepted | "claude-sonnet-5-5 could not answer. Anthropic did not accept the API key. Check ANTHROPIC_API_KEY in the .env file." and then "The answer below is from the model on this machine, not from Claude." |
+| No credit, or a billing problem | "... Anthropic reports a billing problem. The API account may have no credit left; a Claude subscription does not include any." and the same second sentence |
+| Too many requests, an overloaded service, no internet | Named as such, and the same second sentence. An overloaded service is tried once more first |
+| Claude declined the question | "The model declined to answer that." Anthropic may answer with another Claude model instead |
 | The answer hit its length limit | The part that arrived, and "That answer was cut off at its length limit." |
+| You said no to sending sensitive content | "Not sent: nothing more went to Claude. Ask again without asking for Claude, and the model on this machine answers." No answer follows |
+| The request did not come first in your message | "I did not take that as a request for Claude, so the answer below is from this machine. To ask Claude, begin your message with "Ask Claude"." |
+| You said yes to a web request of an earlier question, after asking something else | "This belongs to an earlier question that asked for Claude. You have said something else since, so Claude is not asked again, and the answer below is not from Claude." |
 
 A failed request is not repeated by HELIOS. The one exception costs
 nothing: when Anthropic turns a request down over the reasoning that is
 sent back with it, the same question is asked once more without that
 reasoning.
+
+If the local model fails, nothing is handed to Claude in its place.
+HELIOS says that the model did not answer.
 
 ## Tool requests and changes
 
@@ -237,24 +324,44 @@ you have allowed small changes to run by themselves.
   change waits for your yes, also when small changes are allowed to run
   by themselves.
 - Your yes to a request is written down before its action runs. The same
-  request cannot run a second time, not even after a crash in the middle.
+  yes cannot run it a second time, not even after a crash in the middle,
+  and a request that a model repeats gets a card of its own.
+- A card that asks whether a conversation may be sent to Claude belongs
+  to the question it was raised for. When you send another message, the
+  card is closed. A yes that comes too late sends nothing.
+- Every other card remembers its question too. When Claude asked for a
+  web search and you say yes while that is still your latest question,
+  Claude reads what came back. If you have said something else in
+  between, the search still runs, but the model on this machine reads the
+  result: neither the earlier request for Claude nor a later one is used
+  for it.
 
-## Limits
+## Limits, and what is not tested
 
 - **Never run against the real API.** Everything here was tested with
   stand-ins: a stand-in for the SDK's client, and the real SDK talking to
   a stand-in service on the Mac. Whether Anthropic accepts each field of
   the request is only shown by a real call.
+- **Never run with a real microphone.** That a spoken "Ask Claude ..."
+  is written down by the speech recogniser the way the rule expects is
+  not tested. The rule itself is tested on written examples.
+- **The list of commands is short on purpose, and only the beginning of a
+  message is read.** A request phrased another way, or placed after other
+  words, is not recognised, and the local model answers. That is the side
+  it is meant to fail on. The screen's "Ask Claude" always works.
+- **Words are read as yours.** If a message begins with pasted text, and
+  that text begins with such a command, it counts as a request. "Send
+  this to Claude" is read as the assistant also when you know a person of
+  that name.
 - The limit counts what HELIOS sends. It does not see other use of the
   same key.
 - Prices are settings and go out of date. An unknown model is counted at
   the highest known price.
 - When an answer breaks off in the middle, the words that were already
   shown or spoken stay shown or spoken, and the next model's answer
-  follows them.
+  follows them, after the sentence that says it is not Claude's.
+- A running answer cannot be cancelled. There is no such control yet.
 - The key is in a plain file.
-- Background work (summaries, extraction) is routed to the light model by
-  the rules, but nothing in HELIOS starts such work yet.
 
 ## Checks on the laptop
 
@@ -264,14 +371,18 @@ the right column says. They cost a few cents in total.
 
 | # | Do | Expect |
 |---|---|---|
-| C1 | `npm run homebase -- cloud status` without a key, then with one | "not usable: no API key is set", then "set". The key is not printed |
+| C1 | `npm run homebase -- cloud status` without a key, then with one | "not usable: no API key is set", then "set". The key is not printed. "Used: only for a message in which you ask for Claude" |
 | C2 | `npm run homebase -- cloud check`, answer `yes` | The light model answers in one sentence. Tokens and cost are shown |
 | C3 | `npm run homebase -- cloud check strong`, answer `yes` | The strong model answers. This shows that the fallback option is accepted |
-| C4 | Start the core with the key in place and cloud models off. Ask: "Think hard: which of my tasks matters most?" | The local model answers. Under the answer: "the stronger model was not used: cloud models are switched off" |
-| C5 | "Turn on" on the screen | The password is asked for. Then: "Cloud models on · Anthropic" |
-| C6 | Ask C4's question again | Claude answers, the words appear as they are written, and the model's name is under the answer. "Cloud this month" shows a few cents |
-| C7 | Ask: "Think hard about how the shop did this month." | A card asks before the money figures are sent. "No": nothing is sent |
-| C8 | Put a wrong key in `.env`, restart, ask C4's question. Put the right key back | "Anthropic did not accept the API key..." and the local model answers |
+| C4 | Start the core with the key in place and Claude off. Ask: "Ask Claude which of my tasks matters most." | "Claude is switched off on this machine, so it was not asked. ..." and then the local model's answer, with `gpt-oss:20b` under it |
+| C5 | "Turn on" on the screen | The password is asked for. Then: "Claude on · only when you ask" |
+| C6 | With Claude on, ask an ordinary question, then a long and difficult one, without naming Claude | The local model answers both. Under each: "an ordinary request". "Cloud this month" does not move |
+| C7 | Ask C4's question again | "Claude is answering" appears, the words come as they are written, and the Claude model's name and "you asked for Claude" are under the answer. "Cloud this month" shows a few cents |
+| C8 | Ask a follow-up without naming Claude: "And the second most important?" | The local model answers |
+| C9 | Ask: "Ask Claude how the shop did this month." | A card asks before the money figures are sent. "No": nothing is sent |
+| C10 | Put a wrong key in `.env`, restart, ask C4's question. Put the right key back | "Anthropic did not accept the API key...", then "The answer below is from the model on this machine, not from Claude.", then the local model's answer |
+| C11 | Hold to talk: "Helios, ask Claude which of my tasks matters most." Then, without naming Claude: "And what is due tomorrow?" | Claude answers the first, the local model the second. Note what the recogniser wrote for "Claude" |
+| C12 | Type, with the request after the question: "Which of my tasks matters most? Ask Claude." | "I did not take that as a request for Claude, ..." and then the local model's answer. "Cloud this month" does not move |
 
 | # | Result | Date | Notes |
 |---|---|---|---|
@@ -283,3 +394,7 @@ the right column says. They cost a few cents in total.
 | C6 | Not run | | |
 | C7 | Not run | | |
 | C8 | Not run | | |
+| C9 | Not run | | |
+| C10 | Not run | | |
+| C11 | Not run | | |
+| C12 | Not run | | |

@@ -177,9 +177,11 @@ export function Main({ onLoggedOut }: { onLoggedOut: () => void }) {
 
 /** Which model would answer right now, and what the cloud has cost this month. */
 function ModelLine({ helios }: { helios: HeliosStatus }) {
-  // A cloud model with a key counts only once the owner has switched cloud models on.
-  const real = helios.models.filter((model) => model.id !== "standin" && model.available && (model.location === "local" || helios.cloudEnabled));
-  const usesCloud = real.some((model) => model.location === "cloud");
+  // The model that answers is the one on this machine. Claude is not listed
+  // here: it has its own line, because it answers only when asked for.
+  const real = helios.models.filter((model) => model.id !== "standin" && model.available && model.location === "local");
+  // What Claude has cost this month is shown while it can be asked for.
+  const usesCloud = helios.cloudEnabled && helios.models.some((model) => model.location === "cloud" && model.available);
   return (
     <>
       <p>
@@ -270,9 +272,11 @@ function WebLine({ web, onChanged }: { web: HeliosStatus["web"]; onChanged: () =
 }
 
 /**
- * Whether HELIOS may send a conversation to a cloud model, and the switch
- * for it. Off works at once. On lets conversations leave this machine and
- * can cost money, so the core asks for the password again.
+ * Whether Claude can be asked for, and the switch for it. Off works at
+ * once. On lets a conversation leave this machine when the owner asks for
+ * Claude, and can cost money, so the core asks for the password again. On
+ * does not make HELIOS choose Claude: that takes "Ask Claude", or the
+ * words, for each message.
  */
 function CloudLine({ cloud, onChanged }: { cloud: HeliosStatus["cloud"]; onChanged: () => void }) {
   const [asking, setAsking] = useState(false);
@@ -303,11 +307,13 @@ function CloudLine({ cloud, onChanged }: { cloud: HeliosStatus["cloud"]; onChang
     await set(true);
   };
 
-  const state = !cloud.enabled ? "off" : cloud.ready ? `on · ${cloud.service}` : `on · ${cloud.problem}`;
+  // On means: Claude can be asked for. It never means that HELIOS picks Claude by itself.
+  const elsewhere = cloud.service && cloud.service !== "Anthropic" ? ` · ${cloud.service}` : "";
+  const state = !cloud.enabled ? "off" : cloud.ready ? `on · only when you ask${elsewhere}` : `on · ${cloud.problem}`;
   return (
     <>
       <p>
-        Cloud models <span className={cloud.enabled && !cloud.ready ? "text-salmon/80" : "text-soft"}>{state}</span>
+        Claude <span className={cloud.enabled && !cloud.ready ? "text-salmon/80" : "text-soft"}>{state}</span>
         <button type="button" onClick={() => void set(!cloud.enabled)} aria-pressed={cloud.enabled} className="ml-3 text-xs tracking-widest text-mute uppercase hover:text-bone">
           Turn {cloud.enabled ? "off" : "on"}
         </button>
@@ -321,7 +327,7 @@ function CloudLine({ cloud, onChanged }: { cloud: HeliosStatus["cloud"]; onChang
             autoComplete="current-password"
             autoFocus
             required
-            aria-label="Your password, to turn cloud models on"
+            aria-label="Your password, to make Claude available"
             placeholder="Password, to turn it on"
             className="w-44 border-b border-line bg-transparent py-1 text-sm text-bone outline-none placeholder:text-mute focus:border-salmon/60"
           />

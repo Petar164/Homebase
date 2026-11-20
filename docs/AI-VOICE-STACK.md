@@ -15,8 +15,8 @@ are in [benchmarks/2026-11-15-mac-m5-max.json](benchmarks/2026-11-15-mac-m5-max.
 | Job | Model | Runs through | State |
 |---|---|---|---|
 | Everyday reasoning, Home Base questions | `qwen3.5:4b` (4.5 billion parameters, quantisation `nvfp4`, 4.0 GB on disk) | Ollama 0.40.16, on the machine | **Works on the Mac**, through the whole HELIOS loop with tools. Needs Ollama 0.19 or newer |
-| Hard reasoning, planning, analysis | `claude-sonnet-5-5` | Anthropic API, SDK 1.8.0 | Written; request checked against the SDK's types and tested with a fake. **No real call yet: there is no API key** |
-| Extraction, classification, summaries, background work | `claude-haiku-5-5` | same | same |
+| A message in which the owner asks for Claude, and nothing else | `claude-sonnet-5-5` | Anthropic API, SDK 1.8.0 | Written; request checked against the SDK's types and tested with a fake. **No real call yet: there is no API key** |
+| The test question of `cloud check`. No conversation uses it | `claude-haiku-5-5` | same | same |
 | Speech to text | NVIDIA Parakeet Unified English 0.6B, int8, non-streaming export | sherpa-onnx 2.0.1, CPU | **Works on the Mac** |
 | Speech to text with words as you speak | the same model, streaming export (560 ms steps) | sherpa-onnx 2.0.1, CPU | **Works on the Mac**; not yet wired into the worker |
 | Speech to text, fallback | Parakeet TDT 0.6B v2, int8 | sherpa-onnx 2.0.1, CPU | **Works on the Mac**; used automatically if the preferred model will not load |
@@ -31,20 +31,20 @@ provider is another small file.
 
 ## What was actually tested
 
-**Automated tests: 230 in the core (80 of them for web access, see
+**Automated tests: 261 in the core (80 of them for web access, see
 [WEB-ACCESS.md](WEB-ACCESS.md), 13 for the screen's files and the login
-check, and 29 for Claude as a cloud model, see
-[CLAUDE-API.md](CLAUDE-API.md)), 75 in the voice worker, all passing on
-the Mac.**
+check, 29 for Claude as a cloud model and 32 for "Claude only when asked",
+see [CLAUDE-API.md](CLAUDE-API.md)), 75 in the voice worker, all passing
+on the Mac.**
 They cover each acceptance point of the brief:
 
 | # | Requirement | Where it is tested |
 |---|---|---|
-| 1 | The right model for each routing condition | `helios.test.ts`: "picks the model for each routing condition" |
-| 2 | Restricted information cannot pass the cloud gate | "never escalates to the cloud when the data policy forbids it", "does not send money data to the cloud until the owner approves" |
+| 1 | The right model for each routing condition | `helios.test.ts`: "picks the model on this machine unless Claude was asked for, and says why"; `local-first.test.ts` |
+| 2 | Restricted information cannot pass the cloud gate | "never uses the cloud when the data policy forbids it, also when Claude was asked for", "does not send money data to the cloud until the owner approves that conversation" |
 | 3 | Usage accounting survives restarts | "keeps its count across a restart" |
 | 4 | The cap blocks further cloud use | "stops cloud calls at the monthly cap", "cannot be passed by two requests at once, or by a crash" |
-| 5 | A local-model failure does not damage a conversation or the core | "falls back to another model without damaging the conversation" |
+| 5 | A local-model failure does not damage a conversation or the core | "does not hand the question to the cloud when the local model fails, and does not damage the conversation" |
 | 6 | Speech reaches the conversation pipeline | `voice.test.ts`: "turns what was heard into a stored turn and speaks the answer" |
 | 7 | Speech can be interrupted | `apps/voice/tests`: "speech can be stopped at once", "pressing talk interrupts helios" |
 | 8 | A voice-worker failure does not stop the core | `voice.test.ts`: "is started again with growing pauses, then left off, and the core keeps answering" |
@@ -184,19 +184,36 @@ Fixed rules in `apps/core/src/ai/policy.ts`. The same request always takes
 the same route, and the reason is stored with the answer and shown under
 it on screen. HELIOS can also be asked ("which model answered that?").
 
-1. You asked for stronger reasoning ("think hard", "use the stronger
-   model", or the screen's "Think hard" option): the strong cloud model.
-2. The request is long (over 600 characters) or analytical (compare,
-   analyse, trade-offs, strategy, step by step, and similar): the strong
-   cloud model.
-3. Everything else: the local model.
-4. No local model running: the light cloud model.
+**HELIOS is local first.** Since 20 November 2026 there are two rules:
 
-Background work (extraction, summaries) goes to the light cloud model,
-then the local one. A model that fails is skipped for the rest of that
-turn and the next allowed one answers. A cloud model that fails says why.
+1. You asked for Claude for this one message, with the screen's "Ask
+   Claude" or by beginning the message with a command that names it ("Ask
+   Claude to ...", "Use Claude for this"): Claude answers, if the
+   conditions below hold.
+2. Everything else: the model on this machine.
 
-A cloud model is used only when all of these hold: cloud use is switched
+What counts as asking is decided by a fixed list of command forms at the
+beginning of the message, never by a model. Words later in a message,
+text that was pasted in, a mention, a question about Claude and "don't"
+are not requests. When a message holds such a command without beginning
+with it, HELIOS says before the answer that it was not taken as a
+request.
+
+Nothing else leads to a cloud model. A long or analytical question, the
+words "think hard", a local model that is not running or that fails,
+background work: all of these stay on this machine. The settings that
+used to send questions to the cloud by themselves (`ai.prefer`,
+`ai.routing`) are gone, and a settings file that still holds them changes
+nothing. The request holds for the one message it was made in; the next
+message is an ordinary one again. How to ask, and what does not count as
+asking, is in [CLAUDE-API.md](CLAUDE-API.md#how-to-ask-for-claude).
+
+A model that fails is skipped for the rest of that turn. If that was
+Claude, HELIOS says why, says that the answer which follows is not
+Claude's, and the local model answers under its own name. If it was the
+local model, nothing takes its place.
+
+When Claude is asked for, it is used only when all of these hold: cloud use is switched
 on (`ai.cloud.allowed`, which is off until you turn it on from the screen;
 a key alone switches nothing on); this month's budget has room; nothing labelled
 secret is involved; and nothing labelled sensitive is involved, or you
@@ -228,9 +245,10 @@ key is labelled secret and shown to no model.
 measured): a typical Sonnet answer with HELIOS's instructions and tools is
 about 1,700 tokens in (2,250 the cautious way the budget counts; the size
 of HELIOS's own requests was measured) and 400 out, which is about $0.0085,
-counted here as €0.01. Ten such answers a day is about €3 a month. A
-million tokens of background reading by Haiku is $0.10. Local answers cost
-nothing. On those figures the €20 cap is not reached in normal use; the
+counted here as €0.01. Claude answers only when asked, so the month's cost
+is the number of times you ask: ten such answers a day is about €3 a
+month. Local answers cost nothing. On those figures the €20 cap is not
+reached in normal use; the
 reservation rule means the last €0.10 or so of the cap is never spent. The
 table per question, and what is counted on the safe side, is in
 [CLAUDE-API.md](CLAUDE-API.md#what-it-costs).
@@ -437,8 +455,8 @@ numbers; the file holds no words and no device names.
 |---|---|
 | Parakeet Unified will not load | Parakeet TDT v2 is loaded instead, and the log says so |
 | A model file is missing or is not the listed file | It is not loaded. For Parakeet Unified the fallback above applies; otherwise an error state on screen, and the voice status names the file and the command that fetches it |
-| The local model or Ollama is down | The light cloud model answers, if the rules allow; otherwise HELIOS says no model answered |
-| The cloud is blocked (switch, budget, sensitive content) | The local model answers and the reason is shown |
+| The local model or Ollama is down | HELIOS says no model answered. Nothing is handed to a cloud model in its place |
+| Claude was asked for and may not be used (switch, budget, secret content), or fails | HELIOS says why first, and the local model answers under its own name |
 | The voice worker dies | It is restarted; typing keeps working throughout |
 | The microphone or speaker disappears | An error state on screen; the next press tries again |
 | No wake model | Push-to-talk |

@@ -26,8 +26,10 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
   const [voice, setVoice] = useState<VoiceInfo | null>(null);
   const [helios, setHelios] = useState<HeliosState>("idle");
   const [talking, setTalking] = useState(false);
-  /** Ask for the stronger model for the next message only. */
-  const [strong, setStrong] = useState(false);
+  /** Send the next message to Claude. It holds for that one message, then switches itself off. */
+  const [claude, setClaude] = useState(false);
+  /** The name of the model at work on an answer right now, while that model is Claude. */
+  const [claudeAtWork, setClaudeAtWork] = useState<string | null>(null);
   /** Web requests of the turn in progress: what is being searched or read right now. */
   const [activity, setActivity] = useState<WebActivity[]>([]);
 
@@ -84,11 +86,14 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
         reportState.current(event.state);
         if (event.state === "idle") {
           setStreaming("");
+          setClaudeAtWork(null);
           // The turn is over. What the web was used for, and what failed, now stands under the answer itself.
           setActivity([]);
         }
       } else if (event.type === "activity" && mine(event.conversationId)) {
         setActivity((existing) => [...existing.filter((other) => other.id !== event.activity.id), event.activity]);
+      } else if (event.type === "answering" && mine(event.conversationId)) {
+        setClaudeAtWork(event.cloud ? event.model : null);
       } else if (event.type === "delta" && mine(event.conversationId)) {
         setStreaming((soFar) => soFar + event.text);
       } else if (event.type === "message" && mine(event.conversationId)) {
@@ -112,8 +117,9 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
     setText("");
     setActivity([]);
     try {
-      const turn = await api<TurnResult>("POST", "/api/helios/message", { text: say, conversationId: conversationId ?? undefined, reasoning: strong ? "strong" : undefined });
-      setStrong(false);
+      // "Ask Claude" goes along with this one message and is then off again: the next message is an ordinary one.
+      const turn = await api<TurnResult>("POST", "/api/helios/message", { text: say, conversationId: conversationId ?? undefined, claude: claude ? true : undefined });
+      setClaude(false);
       setConversationId(turn.conversationId);
       addMessages(turn.messages);
       turn.approvals.forEach(putApproval);
@@ -144,6 +150,10 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
     async (action: "start" | "stop") => {
       setError("");
       setTalking(action === "start");
+      // "Ask Claude" is for the next typed message. A spoken message asks in
+      // words. So the choice does not stay lit across something spoken, to
+      // be used by a message typed later.
+      if (action === "start") setClaude(false);
       try {
         await api("POST", "/api/voice/listen", { action });
       } catch (caught) {
@@ -192,9 +202,19 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
   };
 
   // With the transcript off, only HELIOS's latest words stay on screen.
-  const lastAnswer = [...messages].reverse().find((message) => message.role !== "user");
   const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-  const shown = transcript ? messages.slice(-5) : lastAnswer ? [lastAnswer] : [];
+  // With the transcript hidden, what is shown is the answer to the latest
+  // message, together with the remarks HELIOS made on the way to it. Such a
+  // remark can be that Claude was asked for and is not the one answering,
+  // and an answer must never stand there without it.
+  const lastOwn = messages.findLastIndex((message) => message.role === "user");
+  const sinceLastOwn = messages.slice(lastOwn + 1);
+  // Until the new answer begins, the one before it stays on screen, as it
+  // always did. Not while Claude is at work, though: an earlier answer must
+  // not stand right above "Claude is answering" as if it were Claude's.
+  const earlier = messages.slice(0, Math.max(lastOwn, 0));
+  const latestTurn = sinceLastOwn.length > 0 || claudeAtWork ? sinceLastOwn : earlier.slice(earlier.findLastIndex((message) => message.role === "user") + 1);
+  const shown = transcript ? messages.slice(-5) : latestTurn.slice(-4);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[38rem] flex-col justify-end gap-3 pb-2">
@@ -204,6 +224,8 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
           message.role === "user" ? (
             <p key={message.id} className="text-right text-sm text-mute">
               {message.text}
+              {/* This message asked for Claude. The mark belongs to this message alone. */}
+              {message.askedClaude && <span className="ml-2 text-xs tracking-widest text-salmon/80 uppercase">asked Claude</span>}
             </p>
           ) : message.role === "assistant" ? (
             <div key={message.id}>
@@ -219,12 +241,14 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
             </p>
           ),
         )}
+        {/* Shown only while Claude itself is at work on the answer. */}
+        {claudeAtWork && <p className="text-xs tracking-widest text-salmon/80 uppercase">Claude is answering · {claudeAtWork}</p>}
         {streaming && <p className="text-xl leading-snug font-light text-soft">{streaming}</p>}
         {activity.slice(-3).map((entry) => (
           <ActivityLine key={entry.id} activity={entry} />
         ))}
         {/* Which model wrote the last answer, and why it was the one chosen. */}
-        {lastAssistant?.model && !streaming && (
+        {lastAssistant?.model && !streaming && shown.some((message) => message.id === lastAssistant.id) && (
           <p className="text-xs text-mute">
             {lastAssistant.model}
             {lastAssistant.route && ` · ${lastAssistant.route}`}
@@ -301,18 +325,18 @@ export function Conversation({ onState, onChanged }: { onState: (state: HeliosSt
           value={text}
           onChange={(event) => setText(event.target.value)}
           maxLength={4000}
-          placeholder={busy ? "HELIOS is answering…" : "Say something to HELIOS…"}
+          placeholder={busy ? "HELIOS is answering…" : claude ? "This one message goes to Claude…" : "Say something to HELIOS…"}
           aria-label="Message to HELIOS"
           className="min-w-0 flex-1 rounded-full border border-line bg-ink/80 px-5 py-2.5 text-base text-bone outline-none placeholder:text-mute focus:border-salmon/60"
         />
         <button
           type="button"
-          onClick={() => setStrong((on) => !on)}
-          aria-pressed={strong}
-          title="Use the stronger model for the next message"
-          className={`text-xs tracking-widest uppercase ${strong ? "text-salmon" : "text-mute hover:text-bone"}`}
+          onClick={() => setClaude((on) => !on)}
+          aria-pressed={claude}
+          title="Send the next message to Claude, and only that one"
+          className={`text-xs tracking-widest uppercase ${claude ? "text-salmon" : "text-mute hover:text-bone"}`}
         >
-          Think hard
+          Ask Claude
         </button>
         <button type="button" onClick={toggleTranscript} className="text-xs tracking-widest text-mute uppercase hover:text-bone" aria-pressed={transcript}>
           Transcript {transcript ? "on" : "off"}

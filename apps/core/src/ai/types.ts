@@ -110,9 +110,10 @@ export class ProviderError extends Error {
 
 /**
  * What a provider is for. The router picks by role, never by model name:
- *   local    the model on this machine; the default for ordinary requests
- *   strong   the cloud model for hard reasoning
- *   light    the cheap cloud model for extraction and background work
+ *   local    the model on this machine; it answers unless Claude is asked for
+ *   strong   the cloud model that answers a message which asks for Claude
+ *   light    the cheap cloud model; only the `cloud check` command calls it,
+ *            and the router never picks it
  *   standin  fixed rules, used only while no real model exists
  */
 export type ProviderRole = "local" | "strong" | "light" | "standin";

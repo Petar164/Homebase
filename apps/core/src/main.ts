@@ -47,7 +47,7 @@ try {
     !cloud.enabled
       ? "Cloud models are off (switch them on from the screen, or set ai.cloud.allowed in config.json)."
       : cloud.ready
-        ? `Cloud models are on. Conversations may go to ${cloud.service} (${cloud.models.join(", ")}), up to €${budget.capEur} a month.`
+        ? `Cloud models are on. Claude (${cloud.models[0] ?? "no model set"}, at ${cloud.service}) answers only a message that asks for it, up to €${budget.capEur} a month.`
         : `Cloud models are on, but ${cloud.problem}.`,
   );
   await app.listen({ host, port });
@@ -55,9 +55,9 @@ try {
   log.info(`Home Base ${APP_VERSION} is running at http://${host === "127.0.0.1" ? "localhost" : host}:${port}`);
   log.info(`Data folder: ${instance.paths.root}`);
   if (!ownerExists(instance.db)) log.warn("No owner account yet. Create one with:  npm run homebase -- owner set-password");
-  // A cloud model with a key is only named as usable when the owner has switched cloud models on.
-  const ready = (await helios.status()).models.filter((model) => model.available && model.id !== "standin" && (model.location === "local" || cloud.enabled));
-  log.info(ready.length > 0 ? `HELIOS models: ${ready.map((model) => `${model.model} (${model.location})`).join(", ")}` : "HELIOS has no model connected yet; the stand-in answers.");
+  // The model that answers is the one on this machine. Claude is named in the line above, and answers only when asked for.
+  const ready = (await helios.status()).models.filter((model) => model.available && model.location === "local" && model.id !== "standin");
+  log.info(ready.length > 0 ? `HELIOS answers with ${ready.map((model) => model.model).join(", ")}, on this machine.` : "HELIOS has no local model connected yet; the stand-in answers.");
 
   const backupCycle = () => runBackupCycle(instance, log).catch((error: Error) => log.error(`Backup cycle failed: ${error.message}`));
   void backupCycle();

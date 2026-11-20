@@ -8,7 +8,7 @@ import type { Session } from "../security/sessions.ts";
 import { type Logger, newId } from "../util.ts";
 import type { WebAccess } from "../web/service.ts";
 import { SourceBook } from "../web/sources.ts";
-import { budgetStatus, chooseProvider, classifyRequest, costMicros, estimateMicros, recordEgress, reserve, settle, settleAbandoned, type Task, warningDue } from "./policy.ts";
+import { budgetStatus, chooseProvider, claudeRequestIn, costMicros, estimateMicros, namesClaudeInACommand, recordEgress, reserve, settle, settleAbandoned, type Task, warningDue } from "./policy.ts";
 import { looksLikeSecret } from "./secrets.ts";
 import { findTool, type Tool, type ToolCheck, type ToolContext, type ToolOutput, toolSpecs, type TurnFacts } from "./tools.ts";
 import { type ChatMessage, type ChatResponse, maxSensitivity, type ModelProvider, ProviderError, SENSITIVITY, type Sensitivity, type ToolCall, type ToolResult } from "./types.ts";
@@ -42,6 +42,10 @@ const ANSWER_RESERVE_TOKENS = 1500;
 const CHARS_PER_TOKEN = 3.2;
 /** What a cloud model's context is counted as here. Theirs is far larger; this only keeps web text in proportion. */
 const CLOUD_CONTEXT_TOKENS = 60_000;
+/** Said when a message holds words like "ask Claude" but does not begin with them, so it is not a request. */
+const NOT_TAKEN = 'I did not take that as a request for Claude, so the answer below is from this machine. To ask Claude, begin your message with "Ask Claude".';
+/** Said when a card of a question that asked for Claude is answered after the owner has gone on to something else. */
+const MOVED_ON = "This belongs to an earlier question that asked for Claude. You have said something else since, so Claude is not asked again, and the answer below is not from Claude.";
 
 type MessageRow = {
   id: string;
@@ -69,8 +73,14 @@ type ApprovalRow = {
   decided_at: string | null;
 };
 
-/** What `messages.content` holds: the parts of a message that are not plain text. */
-type StoredContent = { toolCalls?: ToolCall[]; raw?: unknown; results?: ToolResult[]; hidden?: boolean; web?: WebUse };
+/**
+ * What `messages.content` holds: the parts of a message that are not plain
+ * text. On one of the owner's messages, `claude` says that this message
+ * asked for Claude, and how: "screen", or the name of the command form the
+ * words matched. It is the only record of that request, and it belongs to
+ * this one message.
+ */
+type StoredContent = { toolCalls?: ToolCall[]; raw?: unknown; results?: ToolResult[]; hidden?: boolean; web?: WebUse; claude?: string };
 
 type History = { messages: ChatMessage[]; sensitivity: Sensitivity; lastSensitiveSeq: number; preview: Approval["preview"] };
 
@@ -96,7 +106,8 @@ function toVisible(row: MessageRow): ConversationMessage | null {
   if (row.role === "tool" || (row.role === "assistant" && !row.text.trim())) return null;
   if (row.role === "system" && row.content?.includes('"hidden":true')) return null; // context for the model, not for the screen
   const web = row.role === "assistant" && row.content?.includes('"web":') ? ((JSON.parse(row.content) as StoredContent).web ?? null) : null;
-  return { id: row.id, seq: row.seq, role: row.role, text: row.text, createdAt: row.created_at, model: row.model, route: row.route_reason, ...(web ? { web } : {}) };
+  const askedClaude = row.role === "user" && row.content?.includes('"claude":') === true;
+  return { id: row.id, seq: row.seq, role: row.role, text: row.text, createdAt: row.created_at, model: row.model, route: row.route_reason, ...(web ? { web } : {}), ...(askedClaude ? { askedClaude: true } : {}) };
 }
 
 /** What a model is shown of a tool's result: the output, and nothing the core keeps for itself. */
@@ -314,14 +325,22 @@ export class Helios {
 
   // ---------- a turn ----------
 
-  /** Handles one message from the owner and returns what was added to the transcript. */
-  async handleMessage(text: string, options: { conversationId?: string; channel?: "text" | "voice"; reasoning?: "strong" } = {}): Promise<TurnResult> {
+  /**
+   * Handles one message from the owner and returns what was added to the
+   * transcript. `claude` is true when the owner chose "Ask Claude" on the
+   * screen for this message.
+   */
+  async handleMessage(text: string, options: { conversationId?: string; channel?: "text" | "voice"; claude?: boolean } = {}): Promise<TurnResult> {
     if (this.busy) throw new AppError(409, "HELIOS is still answering the previous message.");
     this.busy = true;
     try {
       let conversationId = options.conversationId;
       if (conversationId) {
         this.requireConversation(conversationId);
+        // A new message ends what came before it. A card that still asks
+        // whether an earlier question may go to Claude belongs to that
+        // earlier question, and is closed with it.
+        this.closeCloudRequests(conversationId);
       } else {
         conversationId = newId();
         const now = this.now().toISOString();
@@ -335,15 +354,73 @@ export class Helios {
         this.append(conversationId, { role: "system", text: "That looked like a password or a key. I stored it marked secret and did not pass it to any model.", sensitivity: "normal" });
         return { conversationId, messages: this.messages(conversationId).filter((entry) => entry.seq >= kept.seq), approvals: [] };
       }
-      const message = this.append(conversationId, { role: "user", text, sensitivity: "private" });
-      return await this.run(conversationId, message.seq - 1, classifyRequest(text, this.instance.config, options.reasoning));
+      // Claude is asked for by this message or not at all: with the screen's
+      // "Ask Claude", or in so many words. The request is written on the
+      // message itself. The rest of this turn reads it there, and the next
+      // message starts without it.
+      const how = options.claude ? "screen" : claudeRequestIn(text);
+      const message = this.append(conversationId, { role: "user", text, ...(how ? { content: { claude: how } } : {}), sensitivity: "private" });
+      if (how) audit(this.db, { actor: "owner", action: "cloud.requested", target: conversationId, detail: { how, channel: options.channel ?? "text" } });
+      // Words that came close to a request and are not one: the owner is
+      // told, before the answer, that it is not Claude's, and how to ask.
+      else if (namesClaudeInACommand(text)) this.disclose(conversationId, NOT_TAKEN);
+      return await this.run(conversationId, message.seq - 1);
     } finally {
       this.busy = false;
       this.setState("idle");
     }
   }
 
-  private async run(conversationId: string, afterSeq: number, task: Task): Promise<TurnResult> {
+  /** The place in the transcript of the owner's latest message: where the turn in progress began. */
+  private turnSeq(conversationId: string): number {
+    return (this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM messages WHERE conversation_id = ? AND role = 'user'").get(conversationId) as { seq: number }).seq;
+  }
+
+  /** What a question asks for, read from the owner's message that started it: the latest one, or the one at `seq`. */
+  private turnTask(conversationId: string, seq = this.turnSeq(conversationId)): Task {
+    const row = this.db.prepare("SELECT content FROM messages WHERE conversation_id = ? AND role = 'user' AND seq = ?").get(conversationId, seq) as { content: string | null } | undefined;
+    return { claudeRequested: Boolean(row?.content && (JSON.parse(row.content) as StoredContent).claude) };
+  }
+
+  /**
+   * A remark the owner must not miss: that the answer which follows is not
+   * Claude's, and why. Claude was asked for and may not or cannot answer,
+   * or the words came close to a request without being one. It is written
+   * into the conversation and handed to the voice, so that it is said
+   * before the answer it is about.
+   */
+  private disclose(conversationId: string, text: string): void {
+    this.append(conversationId, { role: "system", text, sensitivity: "normal" });
+    this.bus.publish({ type: "notice", conversationId, text });
+  }
+
+  private saidInThisTurn(conversationId: string, text: string): boolean {
+    return Boolean(this.db.prepare("SELECT 1 FROM messages WHERE conversation_id = ? AND role = 'system' AND text = ? AND seq > ?").get(conversationId, text, this.turnSeq(conversationId)));
+  }
+
+  /** Closes the cards that still ask whether a conversation may be sent to Claude. They belong to a question that is over. */
+  private closeCloudRequests(conversationId: string): void {
+    const open = this.db.prepare("SELECT id FROM approvals WHERE kind = 'cloud_egress' AND status = 'pending' AND conversation_id = ?").all(conversationId) as { id: string }[];
+    for (const { id } of open) {
+      this.db.prepare("UPDATE approvals SET status = 'expired', decided_at = ? WHERE id = ? AND status = 'pending'").run(this.now().toISOString(), id);
+      this.bus.publish({ type: "approval", approval: this.toApproval(this.approvalRow(id) as ApprovalRow) });
+    }
+  }
+
+  /**
+   * One turn, or the rest of one. `heldTurn` is given when a turn goes on
+   * after a card was answered: the place of the owner's message that the
+   * card was raised for.
+   */
+  private async run(conversationId: string, afterSeq: number, heldTurn?: number): Promise<TurnResult> {
+    // Claude answers the question that asked for it, and only while that is
+    // still the owner's latest question. A card that is answered after the
+    // owner has said something else still brings back what it was approved
+    // for, but the model on this machine reads it: neither the earlier
+    // question's request for Claude nor a later one's is used for it.
+    const over = heldTurn !== undefined && heldTurn !== this.turnSeq(conversationId);
+    const task: Task = over ? { claudeRequested: false } : this.turnTask(conversationId);
+    if (over && this.turnTask(conversationId, heldTurn).claudeRequested) this.disclose(conversationId, MOVED_ON);
     const { config } = this.instance;
     const { cloud: cloudConfig } = config.ai;
     const approvals: Approval[] = [];
@@ -359,9 +436,7 @@ export class Helios {
       const history = this.history(conversationId, from);
       const route = await chooseProvider({
         providers: this.providers,
-        prefer: config.ai.prefer,
         cloudEnabled: cloudConfig.allowed,
-        purpose: "conversation",
         task,
         sensitivity: history.sensitivity,
         egressApproved: this.egressApproved(conversationId, history.lastSensitiveSeq),
@@ -395,6 +470,10 @@ export class Helios {
         break;
       }
 
+      // Claude was asked for and another model is about to answer. That is
+      // said first, once, so that the answer is not taken for Claude's.
+      if (route.instead && !this.saidInThisTurn(conversationId, route.instead)) this.disclose(conversationId, route.instead);
+
       const provider = route.provider;
       const request = {
         system: SYSTEM_PROMPT,
@@ -413,15 +492,16 @@ export class Helios {
         reservation = reserve(this.db, config, egress, estimateMicros(config, provider.model, egress.bytes, allowance), this.now());
         if (!reservation) {
           recordEgress(this.db, { ...egress, outcome: "blocked_by_cap" });
-          if (!capped) note(`This month's cloud budget of €${cloudConfig.budget.capEur} is used up, so nothing more is sent to cloud models. The local model can still answer.`);
           capped = true;
-          continue; // route again, without the cloud
+          continue; // route again, without the cloud; the route says why Claude does not answer
         }
       }
 
       let response: ChatResponse;
       let warn = false;
       try {
+        // The screen shows which model is at work, by name, while it is.
+        this.bus.publish({ type: "answering", conversationId, model: provider.model, cloud });
         response = await provider.chat(request);
       } catch (error) {
         // The error text can quote the request, so only its kind is logged.
@@ -435,8 +515,13 @@ export class Helios {
         // A wrong key or an empty account is something the owner has to act
         // on, so a model that knows why it could not answer says so. The
         // turn goes on: another model may still be able to answer.
-        if (known && known.kind !== "aborted") note(`${provider.model} could not answer. ${known.message}`);
+        const stopped = known?.kind === "aborted";
+        const said = known ? `${provider.model} could not answer. ${known.message}` : `${provider.model} could not answer.`;
+        if (cloud && !stopped) this.disclose(conversationId, said);
+        else if (known && !stopped) note(said);
         continue;
+      } finally {
+        this.bus.publish({ type: "answering", conversationId, model: null, cloud: false });
       }
       if (reservation) {
         // After the call: replace the estimate with what it really cost.
@@ -745,12 +830,16 @@ export class Helios {
       .get(id) as ApprovalRow | undefined;
   }
 
-  private createApproval(input: { kind: Approval["kind"]; tier: 1 | 2 | 3; summary: string; action: unknown; conversationId: string }): Approval {
+  private createApproval(input: { kind: Approval["kind"]; tier: 1 | 2 | 3; summary: string; action: Record<string, unknown>; conversationId: string }): Approval {
     const now = this.now();
     const id = newId();
+    // Every card records which of the owner's messages it was raised for
+    // (`turnSeq`), so that a yes can be told apart from a yes that comes
+    // after the owner has moved on.
+    const action = { ...input.action, turnSeq: this.turnSeq(input.conversationId) };
     this.db
       .prepare("INSERT INTO approvals (id, kind, tier, summary, action, conversation_id, requested_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(id, input.kind, input.tier, input.summary, JSON.stringify(input.action), input.conversationId, now.toISOString(), new Date(now.getTime() + APPROVAL_MINUTES * 60_000).toISOString());
+      .run(id, input.kind, input.tier, input.summary, JSON.stringify(action), input.conversationId, now.toISOString(), new Date(now.getTime() + APPROVAL_MINUTES * 60_000).toISOString());
     const approval = this.toApproval(this.approvalRow(id) as ApprovalRow);
     this.bus.publish({ type: "approval", approval });
     return approval;
@@ -817,9 +906,9 @@ export class Helios {
     if (decision === "deny") {
       answer("denied");
       record("");
-      note(row.kind === "tool" ? `Not done: ${row.summary}.` : "Not sent. Ask again without the sensitive part, or set up a local model.");
+      note(row.kind === "tool" ? `Not done: ${row.summary}.` : "Not sent: nothing more went to Claude. Ask again without asking for Claude, and the model on this machine answers.");
     } else if (row.kind === "tool") {
-      const action = JSON.parse(row.action) as { tool: string; input: unknown };
+      const action = JSON.parse(row.action) as { tool: string; input: unknown; turnSeq?: number };
       const tool = findTool(action.tool);
       const parsed = tool?.input.safeParse(action.input);
       let result = "That action is no longer available.";
@@ -867,23 +956,32 @@ export class Helios {
           // stored one, exactly; nothing a model said since changes it.
           this.append(conversationId, { role: "assistant", text: "", content: { toolCalls: [{ id: fetched.id, name: fetched.name, input: parsed?.data }] }, sensitivity: "normal", provider: "helios" });
           this.append(conversationId, { role: "tool", text: "", content: { results: [fetched] }, sensitivity: "normal" });
-          turn = await this.run(conversationId, before, classifyRequest(facts.ownerText, this.instance.config));
+          // A card without a recorded question is from an earlier version: it is read on this machine.
+          turn = await this.run(conversationId, before, action.turnSeq ?? 0);
         }
       } finally {
         this.busy = false;
         this.setState("idle");
       }
     } else {
-      // Cloud approval: the held turn continues, now allowed to use the cloud model.
+      // Cloud approval: the held turn continues, now allowed to send this
+      // conversation to Claude. Only that turn: if the owner has said
+      // something else since, the question this card was about is over.
+      const held = (JSON.parse(row.action) as { turnSeq?: number }).turnSeq;
+      if (conversationId && held !== undefined && held !== this.turnSeq(conversationId)) {
+        this.db.prepare("UPDATE approvals SET status = 'expired', decided_at = ? WHERE id = ? AND status = 'pending'").run(this.now().toISOString(), id);
+        throw new AppError(409, "That card belongs to an earlier question. Ask Claude again if you still want its answer.");
+      }
       answer("approved");
       record("");
       if (conversationId) {
         this.busy = true;
         try {
           const last = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM messages WHERE conversation_id = ?").get(conversationId) as { seq: number };
-          // The owner just approved sending this conversation to the cloud
-          // model that asked, so the continued turn asks for that model.
-          turn = await this.run(conversationId, last.seq, { strongRequested: true, complex: true });
+          // The held turn asked for Claude: that is written on the owner's
+          // message that started it. It now also has the owner's yes for
+          // what it will send.
+          turn = await this.run(conversationId, last.seq, held);
         } finally {
           this.busy = false;
           this.setState("idle");

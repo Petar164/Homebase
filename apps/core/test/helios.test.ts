@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Helios } from "../src/ai/helios.ts";
-import { budgetStatus, chooseProvider, classifyRequest, costMicros, estimateMicros, reserve, type RouteInput, settle, settleAbandoned, warningDue } from "../src/ai/policy.ts";
+import { budgetStatus, chooseProvider, costMicros, estimateMicros, reserve, type RouteInput, settle, settleAbandoned, warningDue } from "../src/ai/policy.ts";
 import { StandInProvider } from "../src/ai/standin.ts";
 import { toolSpecs } from "../src/ai/tools.ts";
 import type { ChatRequest, ChatResponse, ModelProvider, ProviderRole } from "../src/ai/types.ts";
@@ -180,53 +180,59 @@ describe("which model answers", () => {
   const strong = new ScriptedProvider("strong", "cloud", [], "strong");
   const light = new ScriptedProvider("light", "cloud", [], "light");
   const all = [new StandInProvider(), strong, light, local];
-  const ordinary = classifyRequest("What is due this week?", config);
-  const analytical = classifyRequest("Compare the two suppliers and analyse the trade-offs", config);
-  const asked = classifyRequest("Think hard about this: which should I pick?", config);
-  const route = (overrides: Partial<RouteInput> = {}) =>
-    chooseProvider({ providers: all, prefer: "auto", cloudEnabled: true, purpose: "conversation", task: ordinary, sensitivity: "private", egressApproved: false, capReached: false, ...overrides });
+  const ordinary = { claudeRequested: false };
+  const asked = { claudeRequested: true };
+  const route = (overrides: Partial<RouteInput> = {}) => chooseProvider({ providers: all, cloudEnabled: true, task: ordinary, sensitivity: "private", egressApproved: false, capReached: false, ...overrides });
 
-  it("classifies a request by fixed criteria", () => {
-    expect(ordinary).toEqual({ strongRequested: false, complex: false });
-    expect(analytical).toEqual({ strongRequested: false, complex: true });
-    expect(asked).toEqual({ strongRequested: true, complex: true });
-    expect(classifyRequest("x".repeat(601), config).complex).toBe(true);
-    expect(classifyRequest("short", config, "strong").strongRequested).toBe(true);
-  });
-
-  it("picks the model for each routing condition, and says why", async () => {
+  it("picks the model on this machine unless Claude was asked for, and says why", async () => {
     expect(await route()).toMatchObject({ kind: "use", provider: { id: "local" }, reason: "an ordinary request" });
-    expect(await route({ task: analytical })).toMatchObject({ kind: "use", provider: { id: "strong" }, reason: "a long or analytical request" });
-    expect(await route({ task: asked })).toMatchObject({ kind: "use", provider: { id: "strong" }, reason: "you asked for stronger reasoning" });
-    expect(await route({ purpose: "background" })).toMatchObject({ kind: "use", provider: { id: "light" } });
-    // No local model running: the light cloud model takes ordinary requests.
-    expect(await route({ providers: [strong, light] })).toMatchObject({ kind: "use", provider: { id: "light" }, reason: "the local model is not running" });
-    // Preferences.
-    expect(await route({ prefer: "cloud" })).toMatchObject({ kind: "use", provider: { id: "light" } });
-    expect(await route({ prefer: "local", task: analytical })).toMatchObject({ kind: "use", provider: { id: "local" } });
-    expect(await route({ prefer: "local", task: asked })).toMatchObject({ kind: "use", provider: { id: "strong" } }); // an explicit request still counts
-    // Nothing real set up: the stand-in. A model that already failed is skipped.
+    expect(await route({ task: asked })).toMatchObject({ kind: "use", provider: { id: "strong" }, reason: "you asked for Claude" });
+    // No local model running: an ordinary request is not handed to the cloud. Fixed rules answer, or nothing does.
+    expect(await route({ providers: [new StandInProvider(), strong, light] })).toMatchObject({ kind: "use", provider: { id: "standin" } });
+    expect(await route({ providers: [strong, light] })).toEqual({ kind: "none", reason: "The local model is not running. Claude answers only when you ask for it." });
+    // Nothing real set up: the stand-in, or nothing.
     expect(await route({ providers: [new StandInProvider()] })).toMatchObject({ kind: "use", provider: { id: "standin" } });
-    expect(await route({ task: analytical, exclude: new Set(["strong"]) })).toMatchObject({ kind: "use", provider: { id: "local" } });
+    expect(await route({ providers: [] })).toEqual({ kind: "none", reason: "No model is set up." });
+    // A model that already failed in this turn is skipped, and the answer that follows is marked as not being Claude's.
+    expect(await route({ task: asked, exclude: new Set(["strong"]) })).toEqual({
+      kind: "use",
+      provider: local,
+      reason: "you asked for Claude, but it could not answer",
+      instead: "The answer below is from the model on this machine, not from Claude.",
+    });
   });
 
-  it("never escalates to the cloud when the data policy forbids it", async () => {
-    // Cloud switched off: even an explicit request stays local.
-    expect(await route({ task: asked, cloudEnabled: false })).toMatchObject({ kind: "use", provider: { id: "local" }, reason: expect.stringContaining("switched off") });
-    expect(await route({ providers: [strong, light], cloudEnabled: false })).toMatchObject({ kind: "none" });
+  it("never uses the cloud when the data policy forbids it, also when Claude was asked for", async () => {
+    // Cloud switched off: the request stays here, and the owner is told that Claude is off.
+    expect(await route({ task: asked, cloudEnabled: false })).toMatchObject({
+      kind: "use",
+      provider: { id: "local" },
+      reason: "you asked for Claude, but cloud models are switched off",
+      instead: "Claude is switched off on this machine, so it was not asked. You can turn cloud models on from the main screen. The answer below is from the model on this machine.",
+    });
+    expect(await route({ task: asked, providers: [strong, light], cloudEnabled: false })).toEqual({
+      kind: "none",
+      reason: "Claude is switched off on this machine, so it was not asked. You can turn cloud models on from the main screen. No model on this machine is running either.",
+    });
+    // With only fixed rules on this machine, the reason under their answer still says that Claude was asked for.
+    expect(await route({ task: asked, cloudEnabled: false, providers: [new StandInProvider(), strong] })).toMatchObject({
+      kind: "use",
+      provider: { id: "standin" },
+      reason: "you asked for Claude, but cloud models are switched off; no model is connected, so fixed rules answered",
+      instead: expect.stringContaining("The answer below is from fixed rules on this machine."),
+    });
     // Budget used up.
-    expect(await route({ task: analytical, capReached: true })).toMatchObject({ kind: "use", provider: { id: "local" }, reason: expect.stringContaining("budget") });
-    expect(await route({ providers: [strong, light], capReached: true })).toMatchObject({ kind: "none", reason: expect.stringContaining("budget") });
-    // Sensitive content: an analytical request quietly stays local...
-    expect(await route({ task: analytical, sensitivity: "sensitive" })).toMatchObject({ kind: "use", provider: { id: "local" }, reason: expect.stringContaining("sensitive") });
-    // ...an explicit request asks the owner, and only then goes out.
+    expect(await route({ task: asked, capReached: true })).toMatchObject({ kind: "use", provider: { id: "local" }, reason: expect.stringContaining("budget"), instead: expect.stringContaining("budget is used up, so Claude was not asked") });
+    expect(await route({ task: asked, providers: [strong, light], capReached: true })).toMatchObject({ kind: "none", reason: expect.stringContaining("budget") });
+    // Sensitive content: the owner is asked first, and only then does it go out.
     expect(await route({ task: asked, sensitivity: "sensitive" })).toMatchObject({ kind: "needs_approval", provider: { id: "strong" } });
     expect(await route({ task: asked, sensitivity: "sensitive", egressApproved: true })).toMatchObject({ kind: "use", provider: { id: "strong" } });
-    // Secret content never goes to a cloud model, approved or not.
-    expect(await route({ task: asked, sensitivity: "secret", egressApproved: true })).toMatchObject({ kind: "use", provider: { id: "local" } });
-    // Background work never asks: it stays local or does not run.
-    expect(await route({ purpose: "background", sensitivity: "sensitive" })).toMatchObject({ kind: "use", provider: { id: "local" } });
-    expect(await route({ purpose: "background", sensitivity: "sensitive", providers: [light] })).toMatchObject({ kind: "none" });
+    // Secret content never goes to a cloud model, asked for and approved or not.
+    expect(await route({ task: asked, sensitivity: "secret", egressApproved: true })).toMatchObject({ kind: "use", provider: { id: "local" }, instead: expect.stringContaining("never goes to a cloud model") });
+    // Without a request none of this is even looked at: the conversation simply stays here.
+    for (const sensitivity of ["normal", "private", "sensitive", "secret"] as const) {
+      expect(await route({ sensitivity, egressApproved: true })).toEqual({ kind: "use", provider: local, reason: "an ordinary request" });
+    }
   });
 
   it("prices calls on the safe side, in euros", () => {
@@ -255,7 +261,7 @@ describe("the cloud budget", () => {
     const model = cloudOnly([{ toolCalls: [call("get_money_summary", { month: "2026-11" })] }, { text: "You made one sale." }]);
     const { instance, helios } = await setup([model], { cloud: true });
 
-    const turn = await helios.handleMessage("How did the shop do this month?");
+    const turn = await helios.handleMessage("Ask Claude how the shop did this month.");
     // One call went out, before anything sensitive was in the conversation.
     expect(model.requests).toHaveLength(1);
     expect(turn.approvals[0]).toMatchObject({ kind: "cloud_egress", status: "pending" });
@@ -267,7 +273,7 @@ describe("the cloud budget", () => {
 
     const { turn: continued } = await helios.decide(turn.approvals[0]?.id as string, "approve", null);
     expect(model.requests).toHaveLength(2);
-    expect(continued?.messages.at(-1)).toMatchObject({ text: "You made one sale.", model: "cloud-model", route: "you asked for stronger reasoning" });
+    expect(continued?.messages.at(-1)).toMatchObject({ text: "You made one sale.", model: "cloud-model", route: "you asked for Claude" });
     expect(outcome()).toEqual(["sent", "held_for_approval", "sent"]);
   });
 
@@ -276,10 +282,10 @@ describe("the cloud budget", () => {
     const { instance, helios } = await setup([model], { cloud: true });
     cheapPrices(instance);
     instance.config.ai.cloud.budget.capEur = 0.015; // room for the first call's reservation, not for a second
-    await helios.handleMessage("First");
-    const second = await helios.handleMessage("Second");
+    await helios.handleMessage("First", { claude: true });
+    const second = await helios.handleMessage("Second", { claude: true });
     expect(model.requests).toHaveLength(1);
-    expect(second.messages.map((m) => m.text).join(" ")).toMatch(/budget of €0.015 is used up/);
+    expect(second.messages.map((m) => m.text).join(" ")).toMatch(/cloud budget is used up, so Claude was not asked/);
     expect((instance.db.prepare("SELECT outcome FROM egress_log ORDER BY at, rowid").all() as { outcome: string }[]).map((row) => row.outcome)).toEqual(["sent", "blocked_by_cap"]);
     expect((await helios.status()).budget).toMatchObject({ capEur: 0.015, state: "ok" });
     expect((await helios.status()).budget.spentEur).toBeCloseTo(0.006, 5);
@@ -290,7 +296,7 @@ describe("the cloud budget", () => {
     const local = new ScriptedProvider("local", "local", [{ text: "from this machine" }]);
     const { instance, helios } = await setup([cloud, local], { cloud: true });
     instance.config.ai.cloud.budget.capEur = 0;
-    const turn = await helios.handleMessage("Analyse the trade-offs between the two plans");
+    const turn = await helios.handleMessage("Ask Claude to analyse the trade-offs between the two plans.");
     expect(cloud.requests).toHaveLength(0);
     expect(turn.messages.at(-1)).toMatchObject({ text: "from this machine", model: "local-model", route: expect.stringContaining("budget") });
   });
@@ -300,7 +306,7 @@ describe("the cloud budget", () => {
     const first = track(await openInstance({ dataDir }));
     cheapPrices(first);
     first.config.ai.cloud.allowed = true;
-    await new Helios({ instance: first, providers: [cloudOnly([{ text: "one" }])], bus: new EventBus(), log: silentLogger }).handleMessage("First");
+    await new Helios({ instance: first, providers: [cloudOnly([{ text: "one" }])], bus: new EventBus(), log: silentLogger }).handleMessage("First", { claude: true });
     const before = budgetStatus(first.db, first.config).spentEur;
     expect(before).toBeGreaterThan(0);
     first.close();
@@ -337,9 +343,9 @@ describe("the cloud budget", () => {
     const { instance, helios } = await setup([model], { cloud: true });
     cheapPrices(instance);
     instance.config.ai.cloud.budget.warnEur = 0.005;
-    const first = await helios.handleMessage("First");
+    const first = await helios.handleMessage("First", { claude: true });
     expect(first.messages.at(-1)?.text).toMatch(/reached €0.005 of the €20 limit/);
-    const second = await helios.handleMessage("Second");
+    const second = await helios.handleMessage("Second", { claude: true });
     expect(second.messages.map((m) => m.text).join(" ")).not.toMatch(/reached/);
     expect(warningDue(instance.db, instance.config)).toBe(false);
     expect((await helios.status()).budget.state).toBe("warning");
@@ -347,15 +353,18 @@ describe("the cloud budget", () => {
 });
 
 describe("when a model fails", () => {
-  it("falls back to another model without damaging the conversation", async () => {
+  it("does not hand the question to the cloud when the local model fails, and does not damage the conversation", async () => {
     const local = new ScriptedProvider("local", "local", [{ text: "local again" }]);
+    const strong = new ScriptedProvider("strong", "cloud", [{ text: "the cloud stepped in" }], "strong");
     const light = new ScriptedProvider("light", "cloud", [{ text: "the cloud stepped in" }], "light");
-    const { instance, helios } = await setup([local, light], { cloud: true });
+    const { instance, helios } = await setup([local, strong, light], { cloud: true });
     local.failWith = new Error("connection refused, prompt was: What is due?");
 
     const turn = await helios.handleMessage("What is due?");
-    expect(turn.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
-    expect(turn.messages[1]).toMatchObject({ text: "the cloud stepped in", model: "light-model" });
+    // Cloud models are switched on and ready, and still nobody asked for Claude.
+    expect(strong.requests).toHaveLength(0);
+    expect(light.requests).toHaveLength(0);
+    expect(turn.messages.map((m) => [m.role, m.text])).toEqual([["user", "What is due?"], ["system", "The model did not answer. Try again in a moment."]]);
 
     // The local model comes back; the same conversation simply continues.
     local.failWith = null;
@@ -469,11 +478,11 @@ describe("memory", () => {
       { toolCalls: [call("search_conversations", { query: "revenue" })] },
     ], "strong");
     const { helios } = await setup([cloud], { cloud: true });
-    const first = await helios.handleMessage("How much revenue this month?");
+    const first = await helios.handleMessage("How much revenue this month?", { claude: true });
     await helios.decide(first.approvals[0]?.id as string, "approve", null); // the first conversation is approved and answered
 
     // A new conversation recalls that sensitive answer: it must be held again.
-    const second = await helios.handleMessage("What was said about revenue?");
+    const second = await helios.handleMessage("What was said about revenue?", { claude: true });
     expect(second.approvals[0]).toMatchObject({ kind: "cloud_egress", status: "pending" });
   });
 });
